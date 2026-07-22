@@ -17,3 +17,4 @@ class Candidate:
     discogs_genres: list[str] = field(default_factory=list)
     discogs_styles: list[str] = field(default_factory=list)
     discogs_match_confidence: float | None = None
+    deezer_genre: str | None = None

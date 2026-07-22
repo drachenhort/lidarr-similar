@@ -1,8 +1,8 @@
-"""Discovery pipeline: seed artists -> similarity sources -> merge -> Discogs enrichment -> dedupe.
+"""Discovery pipeline: seed artists -> similarity sources -> merge -> enrichment -> dedupe.
 
 Last.fm and Deezer are independent, equally-weighted candidate sources.
-Discogs enrichment is optional and non-blocking; it only augments metadata
-on candidates already produced by the similarity sources.
+Discogs and Deezer-genre enrichment are optional and non-blocking; they only
+augment metadata on candidates already produced by the similarity sources.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ async def discover_candidates(
     discogs: DiscogsEnricher | None,
     existing_artist_names: set[str],
     deezer: DeezerClient | None = None,
+    deezer_genre_enrichment: bool = True,
     top_n_seed_artists: int = 20,
     similar_per_artist: int = 10,
 ) -> list[Candidate]:
@@ -37,6 +38,8 @@ async def discover_candidates(
 
     if discogs is not None:
         candidates = [await discogs.enrich(c) for c in candidates]
+    if deezer is not None and deezer_genre_enrichment:
+        candidates = [await deezer.enrich_genre(c) for c in candidates]
 
     return sorted(candidates, key=lambda c: c.similarity, reverse=True)
 

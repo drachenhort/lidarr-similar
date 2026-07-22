@@ -46,7 +46,7 @@ async def run(argv: list[str] | None = None) -> None:
     cache = Cache(config.cache_path)
 
     lastfm = LastFmClient(config.lastfm_api_key)
-    deezer = DeezerClient() if config.deezer_enabled and not args.no_deezer else None
+    deezer = DeezerClient(cache) if config.deezer_enabled and not args.no_deezer else None
     discogs = (
         DiscogsEnricher(config.discogs_token, cache)
         if config.discogs_enabled and config.discogs_token and not args.no_discogs
@@ -95,7 +95,7 @@ def print_table(candidates: list[Candidate], dedupe_active: bool) -> None:
 
     for rank, candidate in enumerate(candidates, start=1):
         sources = ",".join(candidate.sources) or "-"
-        genres = ", ".join(candidate.discogs_genres) or "-"
+        genres = ", ".join(candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else [])) or "-"
         print(
             f"{rank:>3}  {candidate.name:<{name_width}}  {candidate.similarity:>5.2f}  "
             f"{sources:<14}  {genres}"

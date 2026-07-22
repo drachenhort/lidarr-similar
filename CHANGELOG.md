@@ -5,6 +5,7 @@ All notable changes to this project are documented here, in reverse chronologica
 ## Unreleased
 
 ### Added
+- `DeezerClient.enrich_genre()` — genre enrichment from Deezer, no API token required. Deezer artist objects carry no genre field, so this resolves an artist's top album's `genre_id` to a genre name; cached and best-effort like `DiscogsEnricher`. Wired into `discover_candidates()` and shown alongside Discogs genres in both CLIs.
 - `python -m lidarr_similar.preview` — terminal preview CLI showing a ranked table of candidates (score, contributing sources, Discogs genres) without ever calling Lidarr's add-artist endpoint. Lidarr credentials are now optional; when unset, preview shows all candidates without library dedupe. Supports `--limit`, `--seed-artists`, `--similar-per-artist`, `--no-deezer`, `--no-discogs`, `--no-lidarr`.
 - Initial project scaffold: async, typed Python package (`lidarr_similar`) discovering artists similar to your Last.fm listening history and adding them to Lidarr.
 - `LastFmClient` — pulls top artists from scrobble history and Last.fm's `artist.getSimilar` candidates.

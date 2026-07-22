@@ -21,7 +21,7 @@ async def run() -> None:
 
     lastfm = LastFmClient(config.lastfm_api_key)
     lidarr = LidarrClient(config.lidarr_url, config.lidarr_api_key)
-    deezer = DeezerClient() if config.deezer_enabled else None
+    deezer = DeezerClient(cache) if config.deezer_enabled else None
     discogs = (
         DiscogsEnricher(config.discogs_token, cache)
         if config.discogs_enabled and config.discogs_token
@@ -34,7 +34,10 @@ async def run() -> None:
             lastfm, config.lastfm_username, discogs, existing, deezer=deezer
         )
         for candidate in candidates:
-            print(f"{candidate.name} ({candidate.similarity:.2f}) {candidate.sources} {candidate.discogs_genres}")
+            print(
+                f"{candidate.name} ({candidate.similarity:.2f}) {candidate.sources} "
+                f"{candidate.discogs_genres} {candidate.deezer_genre}"
+            )
     finally:
         await lastfm.aclose()
         await lidarr.aclose()
