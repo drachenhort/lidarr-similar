@@ -197,6 +197,63 @@ async def test_run_discovery_persists_candidates_and_clears_running_flag(tmp_pat
     store.close()
 
 
+async def test_run_discovery_continues_when_lidarr_fails(tmp_path, monkeypatch):
+    """Found live: a Lidarr timeout during existing_artist_identifiers() aborted the whole
+    run silently (no candidates saved, and the error banner didn't render because
+    httpx.ReadTimeout's str() is empty). Lidarr failures must degrade gracefully instead,
+    same as Discogs/Deezer/ListenBrainz, and the error message must never be blank."""
+    candidates = [Candidate(name="X", similarity=0.5, sources=["lastfm"])]
+
+    async def fake_discover_candidates(*args, on_progress=None, **kwargs):
+        if on_progress is not None:
+            await on_progress(candidates)
+        return candidates
+
+    monkeypatch.setattr(web, "discover_candidates", fake_discover_candidates)
+
+    class FailingLidarrClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def existing_artist_identifiers(self):
+            raise TimeoutError  # str(TimeoutError()) == "" - the exact bug found live
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(web, "LidarrClient", FailingLidarrClient)
+
+    config = Config(
+        lastfm_api_key="key",
+        lastfm_username="user",
+        discogs_token=None,
+        discogs_enabled=False,
+        deezer_enabled=False,
+        listenbrainz_enabled=False,
+        lidarr_url="http://lidarr.local",
+        lidarr_api_key="key",
+        lidarr_root_folder=None,
+        lidarr_quality_profile_id=None,
+        cache_path=str(tmp_path / "cache.sqlite3"),
+        store_path=str(tmp_path / "store.sqlite3"),
+    )
+    web._status.running = True
+
+    await web._run_discovery(config)
+
+    assert web._status.running is False
+    store = CandidateStore(config.store_path)
+    assert [c.name for c in store.load_all()] == ["X"]  # discovery still ran and saved results
+    store.close()
+    assert web._status.error  # non-empty: falsy error message would hide the banner entirely
+    assert "TimeoutError" in web._status.error
+
+
+def test_describe_never_returns_empty_string_for_blank_exceptions():
+    assert web._describe(TimeoutError()) == "TimeoutError"
+    assert web._describe(ValueError("bad value")) == "bad value"
+
+
 async def test_run_discovery_preserves_mid_run_ignore(tmp_path, monkeypatch):
     """A candidate ignored via the UI while a run is in progress must not be un-ignored
     by the next progress snapshot, even though the pipeline computed ignored=False for it

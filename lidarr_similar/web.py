@@ -108,6 +108,13 @@ def _store_path() -> str:
     return os.environ.get("STORE_PATH", "lidarr_similar_store.sqlite3")
 
 
+def _describe(error: Exception) -> str:
+    """str(error) is empty for some exceptions (e.g. httpx.ReadTimeout with no message) -
+    confirmed live, this silently hid the error banner entirely, since the template only
+    renders it when status.error is truthy. Always fall back to the exception's type name."""
+    return str(error) or type(error).__name__
+
+
 def _is_lidarr_add_enabled() -> bool:
     """Whether every value the Add to Lidarr button needs is both present and valid -
     via describe_config() rather than raw os.environ, so a UI-saved override (SettingsStore)
@@ -203,7 +210,7 @@ async def refresh() -> RedirectResponse:
     try:
         config = Config.from_env()
     except RuntimeError as error:
-        _status.error = str(error)
+        _status.error = _describe(error)
         return RedirectResponse("/", status_code=303)
 
     _status.running = True
@@ -292,7 +299,7 @@ async def add(name: str = Form(...)) -> RedirectResponse:
             Candidate(name=name, similarity=0.0), config.lidarr_root_folder, config.lidarr_quality_profile_id
         )
     except Exception as error:  # noqa: BLE001 - surfaced to the UI, not swallowed
-        return RedirectResponse(f"/?{urlencode({'error': f'Failed to add {name}: {error}'})}", status_code=303)
+        return RedirectResponse(f"/?{urlencode({'error': f'Failed to add {name}: {_describe(error)}'})}", status_code=303)
     finally:
         await lidarr.aclose()
 
@@ -350,10 +357,16 @@ async def _run_discovery(config: Config) -> None:
                 candidate.ignored_genre = candidate.ignored_genre or prev[2]
         store.replace_all(candidates)
 
+    existing_names, existing_mbids = set(), set()
+    if lidarr is not None:
+        try:
+            existing_names, existing_mbids = await lidarr.existing_artist_identifiers()
+        except Exception as error:  # noqa: BLE001 - best-effort, same as Discogs/Deezer/ListenBrainz:
+            # a slow/unreachable Lidarr (confirmed live: intermittent timeouts on a 962-artist
+            # library) shouldn't abort the whole run, just fall back to no known-library data.
+            _status.error = f"Could not reach Lidarr for library dedupe ({_describe(error)}); continuing without it."
+
     try:
-        existing_names, existing_mbids = (
-            await lidarr.existing_artist_identifiers() if lidarr is not None else (set(), set())
-        )
         await discover_candidates(
             lastfm,
             config.lastfm_username,
@@ -366,7 +379,7 @@ async def _run_discovery(config: Config) -> None:
             on_progress=on_progress,
         )
     except Exception as error:  # noqa: BLE001 - surfaced to the UI, not swallowed
-        _status.error = str(error)
+        _status.error = _describe(error)
     finally:
         await lastfm.aclose()
         if deezer is not None:

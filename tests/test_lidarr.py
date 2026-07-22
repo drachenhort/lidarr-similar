@@ -70,3 +70,11 @@ async def test_quality_profiles_returns_id_and_name():
     profiles = await client.quality_profiles()
 
     assert profiles == [{"id": 1, "name": "Any"}, {"id": 2, "name": "Lossless"}, {"id": 3, "name": "Standard"}]
+
+
+def test_default_http_client_uses_a_generous_timeout():
+    # Found live: httpx's 5s default intermittently timed out on /api/v1/artist for a
+    # 962-artist library (failed under 5s, succeeded at 15s), silently aborting discovery.
+    client = LidarrClient("http://lidarr.local", "key")
+
+    assert client._http.timeout.read >= 30.0

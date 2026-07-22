@@ -9,8 +9,10 @@ from lidarr_similar.models import Candidate
 
 class LidarrClient:
     def __init__(self, url: str, api_key: str, http_client: httpx.AsyncClient | None = None) -> None:
+        # httpx's 5s default timeout intermittently trips on /api/v1/artist for a
+        # large library - confirmed live (962 artists: <5s failed, 15s succeeded).
         self._http = http_client or httpx.AsyncClient(
-            base_url=url.rstrip("/"), headers={"X-Api-Key": api_key}
+            base_url=url.rstrip("/"), headers={"X-Api-Key": api_key}, timeout=30.0
         )
 
     async def existing_artist_names(self) -> set[str]:
