@@ -106,11 +106,21 @@ uvicorn lidarr_similar.web:app --host 0.0.0.0 --port 8000
 ```
 
 Open `http://localhost:8000`. A "⚙ Configuration status" link at the top goes to
-`/config`, which shows every environment variable the app reads — whether it's set,
-whether it's valid (e.g. flags `LIDARR_QUALITY_PROFILE_ID` if it's not numeric), and what
-feature it's needed for. Secret values (API keys, tokens) are never shown, only their
-presence/validity — handy for checking a `.env` or container setup actually took effect
-without needing to check logs or trigger a run first.
+`/config`, an editable settings page — for LASTFM_API_KEY, LASTFM_USERNAME, DISCOGS_TOKEN,
+the DISCOGS/DEEZER/LISTENBRAINZ enabled toggles, and all four LIDARR_* variables, you can
+enter values directly in the browser and click "Save configuration" instead of restarting
+the container with different environment variables. Saved values are stored in `STORE_PATH`
+(SQLite) and take priority over the equivalent environment variable when both are set.
+`CACHE_PATH`/`STORE_PATH` themselves stay environment-only, since that's where the saved
+settings live.
+
+The page also shows, for every variable, whether it's set, whether it's valid where
+checkable, and what feature it's needed for — secret values (API keys, tokens) are never
+shown or pre-filled, only their presence; leave a secret field blank to keep its current
+value. `LIDARR_QUALITY_PROFILE_ID` is a dropdown of your Lidarr instance's actual quality
+profiles (fetched live) once `LIDARR_URL`/`LIDARR_API_KEY` are set, instead of asking you
+to know the numeric ID — Lidarr's UI only shows profile names like "Standard", not their
+ID, which is an easy mistake to make by hand.
 
 The index page itself shows the most recent discovery results (persisted in `STORE_PATH`
 so they survive restarts) and has a "Run discovery now" button. A full run can take a

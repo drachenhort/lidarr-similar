@@ -30,6 +30,13 @@ class LidarrClient:
         response.raise_for_status()
         return response.json()
 
+    async def quality_profiles(self) -> list[dict]:
+        """Lidarr's configured quality profiles ({"id": int, "name": str, ...}), for
+        offering a dropdown instead of asking the user to know the numeric ID by heart."""
+        response = await self._http.get("/api/v1/qualityprofile")
+        response.raise_for_status()
+        return response.json()
+
     async def lookup_artist(self, name: str) -> dict | None:
         response = await self._http.get("/api/v1/artist/lookup", params={"term": name})
         response.raise_for_status()

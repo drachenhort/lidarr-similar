@@ -42,11 +42,11 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from lidarr_similar.cache import Cache
-from lidarr_similar.config import Config, ConfigItem, describe_config
+from lidarr_similar.config import OVERRIDABLE_KEYS, Config, ConfigItem, describe_config, get_effective
 from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
@@ -54,7 +54,7 @@ from lidarr_similar.lidarr import LidarrClient
 from lidarr_similar.listenbrainz import ListenBrainzClient
 from lidarr_similar.models import Candidate
 from lidarr_similar.pipeline import discover_candidates
-from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
+from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList, SettingsStore
 
 app = FastAPI(title="lidarr-similar")
 
@@ -108,6 +108,16 @@ def _store_path() -> str:
     return os.environ.get("STORE_PATH", "lidarr_similar_store.sqlite3")
 
 
+def _is_lidarr_add_enabled() -> bool:
+    """Whether every value the Add to Lidarr button needs is both present and valid -
+    via describe_config() rather than raw os.environ, so a UI-saved override (SettingsStore)
+    counts, and an invalid LIDARR_QUALITY_PROFILE_ID (e.g. a profile name, not its ID)
+    correctly disables the button instead of being treated as merely "truthy"."""
+    required = {"LIDARR_URL", "LIDARR_API_KEY", "LIDARR_ROOT_FOLDER", "LIDARR_QUALITY_PROFILE_ID"}
+    items = {item.name: item for item in describe_config() if item.name in required}
+    return all(item.present and item.valid for item in items.values())
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(min_score: float = 0.0, page: int = 1, message: str | None = None, error: str | None = None) -> str:
     store = CandidateStore(_store_path())
@@ -130,9 +140,7 @@ async def index(min_score: float = 0.0, page: int = 1, message: str | None = Non
     finally:
         genre_ignore_list.close()
 
-    lidarr_add_enabled = all(
-        os.environ.get(var) for var in ("LIDARR_URL", "LIDARR_API_KEY", "LIDARR_ROOT_FOLDER", "LIDARR_QUALITY_PROFILE_ID")
-    )
+    lidarr_add_enabled = _is_lidarr_add_enabled()
     return render_page(
         candidates,
         last_updated,
@@ -148,8 +156,43 @@ async def index(min_score: float = 0.0, page: int = 1, message: str | None = Non
 
 
 @app.get("/config", response_class=HTMLResponse)
-async def config_status() -> str:
-    return render_config_page(describe_config())
+async def config_status(message: str | None = None, error: str | None = None) -> str:
+    quality_profiles = await _fetch_quality_profiles()
+    return render_config_page(describe_config(), quality_profiles, message, error)
+
+
+@app.post("/config")
+async def save_config(request: Request) -> RedirectResponse:
+    form = await request.form()
+    settings = SettingsStore(_store_path())
+    try:
+        for key in OVERRIDABLE_KEYS:
+            raw = form.get(key)
+            if raw is None:
+                continue
+            value = str(raw).strip()
+            if not value:
+                continue  # blank means "leave unchanged" - important for secret fields,
+                # which are never pre-filled, so a blank submit must not wipe them out
+            settings.set(key, value)
+    finally:
+        settings.close()
+    return RedirectResponse(f"/config?{urlencode({'message': 'Configuration saved.'})}", status_code=303)
+
+
+async def _fetch_quality_profiles() -> list[dict] | None:
+    """Live quality-profile list for the dropdown, or None if Lidarr isn't reachable yet -
+    the form falls back to a plain numeric input in that case."""
+    url, api_key = get_effective("LIDARR_URL"), get_effective("LIDARR_API_KEY")
+    if not url or not api_key:
+        return None
+    lidarr = LidarrClient(url, api_key)
+    try:
+        return await lidarr.quality_profiles()
+    except Exception:  # noqa: BLE001 - best-effort; any failure just falls back to a text input
+        return None
+    finally:
+        await lidarr.aclose()
 
 
 @app.post("/refresh")
@@ -423,8 +466,13 @@ def render_page(
 </html>"""
 
 
-def render_config_page(items: list[ConfigItem]) -> str:
-    rows = "".join(_render_config_row(item) for item in items)
+def render_config_page(
+    items: list[ConfigItem],
+    quality_profiles: list[dict] | None,
+    message: str | None,
+    error: str | None,
+) -> str:
+    rows = "".join(_render_config_row(item, quality_profiles) for item in items)
     all_required_present = all(item.present for item in items if item.required_for == "core discovery pipeline")
     summary = (
         '<p class="banner ok">Core discovery pipeline is configured (Last.fm credentials present).</p>'
@@ -432,6 +480,8 @@ def render_config_page(items: list[ConfigItem]) -> str:
         else '<p class="banner error">Core discovery pipeline is missing required configuration - '
         "discovery runs will fail until LASTFM_API_KEY and LASTFM_USERNAME are set.</p>"
     )
+    action_message = f'<p class="banner ok">{html.escape(message)}</p>' if message else ""
+    action_error = f'<p class="banner error">{html.escape(error)}</p>' if error else ""
     return f"""<!doctype html>
 <html>
 <head>
@@ -440,37 +490,82 @@ def render_config_page(items: list[ConfigItem]) -> str:
   <style>{_BASE_STYLE}</style>
 </head>
 <body>
-  <h1>Configuration status</h1>
+  <h1>Configuration</h1>
   <div class="nav"><a href="/">&larr; Back to results</a></div>
   {summary}
-  <table>
-    <thead>
-      <tr><th>Variable</th><th>Status</th><th>Used for</th><th>Value</th></tr>
-    </thead>
-    <tbody>{rows}</tbody>
-  </table>
-  <p class="hint">Secret values (API keys, tokens) are never shown here, only whether they're set.</p>
+  {action_message}
+  {action_error}
+  <form method="post" action="/config">
+    <table>
+      <thead>
+        <tr><th>Variable</th><th>Status</th><th>Used for</th><th>Value</th></tr>
+      </thead>
+      <tbody>{rows}</tbody>
+    </table>
+    <p><button type="submit">Save configuration</button></p>
+  </form>
+  <p class="hint">Secret fields (API keys, tokens) are never pre-filled or echoed back - leave one blank to keep its current value. CACHE_PATH/STORE_PATH are environment-only and can't be changed here.</p>
 </body>
 </html>"""
 
 
-def _render_config_row(item: ConfigItem) -> str:
+def _render_config_row(item: ConfigItem, quality_profiles: list[dict] | None) -> str:
     if not item.present:
         status = '<span class="status-missing">not set</span>'
     elif not item.valid:
         status = '<span class="status-invalid">set, but invalid</span>'
     else:
         status = '<span class="status-ok">&#10003; set</span>'
-    value_cell = html.escape(item.value_preview) if item.value_preview else ("-" if item.present else "-")
+    if item.source:
+        status += f'<br><span class="hint">from {html.escape(item.source)}</span>'
     note_html = f"<br><span class=\"hint\">{html.escape(item.note)}</span>" if item.note else ""
+
+    input_html = _render_config_input(item, quality_profiles)
+
     return (
         "<tr>"
         f"<td><code>{html.escape(item.name)}</code></td>"
         f"<td>{status}{note_html}</td>"
         f"<td>{html.escape(item.required_for)}</td>"
-        f"<td>{value_cell}</td>"
+        f"<td>{input_html}</td>"
         "</tr>"
     )
+
+
+_BOOLEAN_KEYS = {"DISCOGS_ENABLED", "DEEZER_ENABLED", "LISTENBRAINZ_ENABLED"}
+
+
+def _render_config_input(item: ConfigItem, quality_profiles: list[dict] | None) -> str:
+    if not item.editable:
+        value = html.escape(item.value_preview) if item.value_preview else "-"
+        return f"{value} <span class=\"hint\">(env-only)</span>"
+
+    name_attr = html.escape(item.name, quote=True)
+
+    if item.name == "LIDARR_QUALITY_PROFILE_ID" and quality_profiles:
+        current = item.value_preview
+        options = "".join(
+            f'<option value="{profile["id"]}"{" selected" if str(profile["id"]) == current else ""}>'
+            f'{html.escape(profile["name"])} (id {profile["id"]})</option>'
+            for profile in quality_profiles
+        )
+        return f'<select name="{name_attr}"><option value="">-- choose --</option>{options}</select>'
+
+    if item.name in _BOOLEAN_KEYS:
+        current = (item.value_preview or "true").split(" ")[0]
+        return (
+            f'<select name="{name_attr}">'
+            f'<option value="true"{" selected" if current == "true" else ""}>Enabled</option>'
+            f'<option value="false"{" selected" if current == "false" else ""}>Disabled</option>'
+            "</select>"
+        )
+
+    if item.secret:
+        placeholder = "configured, leave blank to keep" if item.present else "not set"
+        return f'<input type="password" name="{name_attr}" placeholder="{html.escape(placeholder, quote=True)}" autocomplete="off">'
+
+    current_value = html.escape(item.value_preview, quote=True) if item.value_preview else ""
+    return f'<input type="text" name="{name_attr}" value="{current_value}">'
 
 
 def _render_ignore_list(ignored_names: list[str]) -> str:

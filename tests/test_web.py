@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
+import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
 
 from lidarr_similar import web
-from lidarr_similar.config import Config
+from lidarr_similar.config import Config, get_effective
 from lidarr_similar.models import Candidate
-from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
+from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList, SettingsStore
 from lidarr_similar.web import app
 
 
@@ -19,6 +22,15 @@ def reset_status():
     yield
     web._status.running = False
     web._status.error = None
+
+
+@pytest.fixture(autouse=True)
+def default_store_path(tmp_path, monkeypatch):
+    """Config.from_env()/describe_config() now touch a SettingsStore at STORE_PATH even
+    for tests that don't care about it - without this, they'd silently create real sqlite
+    files in the repo directory instead of a throwaway tmp_path. Tests that need a specific
+    STORE_PATH still override it explicitly and take precedence."""
+    monkeypatch.setenv("STORE_PATH", str(tmp_path / "default_store.sqlite3"))
 
 
 def test_index_shows_message_when_store_empty(tmp_path, monkeypatch):
@@ -349,6 +361,44 @@ def test_add_endpoint_without_lidarr_config_shows_error(tmp_path, monkeypatch):
     assert "error=" in response.headers["location"]
 
 
+def test_index_hides_add_button_when_quality_profile_id_is_invalid(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIDARR_URL", "http://lidarr.local")
+    monkeypatch.setenv("LIDARR_API_KEY", "key")
+    monkeypatch.setenv("LIDARR_ROOT_FOLDER", "/music")
+    monkeypatch.setenv("LIDARR_QUALITY_PROFILE_ID", "Standard")  # a name, not the numeric ID - invalid
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all([Candidate(name="New Artist", similarity=0.9, sources=["lastfm"])])
+    store.close()
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert "Add to Lidarr" not in response.text
+    assert "Set LIDARR_URL" in response.text  # the config hint should show instead
+
+
+def test_index_shows_add_button_when_config_saved_via_settings_store(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all([Candidate(name="New Artist", similarity=0.9, sources=["lastfm"])])
+    store.close()
+
+    settings = SettingsStore(store_path)
+    settings.set("LIDARR_URL", "http://lidarr.local")
+    settings.set("LIDARR_API_KEY", "key")
+    settings.set("LIDARR_ROOT_FOLDER", "/music")
+    settings.set("LIDARR_QUALITY_PROFILE_ID", "3")
+    settings.close()
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert "Add to Lidarr" in response.text
+
+
 def test_add_endpoint_marks_candidate_in_library_on_success(tmp_path, monkeypatch):
     store_path = tmp_path / "store.sqlite3"
     monkeypatch.setenv("STORE_PATH", str(store_path))
@@ -589,3 +639,80 @@ def test_index_links_to_config_page(tmp_path, monkeypatch):
     response = client.get("/")
 
     assert 'href="/config"' in response.text
+
+
+def test_save_config_persists_editable_fields(monkeypatch):
+    monkeypatch.setenv("LASTFM_USERNAME", "user")
+
+    client = TestClient(app)
+    response = client.post(
+        "/config",
+        data={"LASTFM_API_KEY": "new-key", "LIDARR_URL": "http://lidarr.local", "LIDARR_ROOT_FOLDER": "/music"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+    assert get_effective("LASTFM_API_KEY") == "new-key"
+    assert get_effective("LIDARR_URL") == "http://lidarr.local"
+    assert get_effective("LIDARR_ROOT_FOLDER") == "/music"
+
+
+def test_save_config_blank_field_does_not_overwrite_existing_value():
+    settings = SettingsStore(os.environ["STORE_PATH"])
+    settings.set("DISCOGS_TOKEN", "existing-token")
+    settings.close()
+
+    client = TestClient(app)
+    client.post("/config", data={"DISCOGS_TOKEN": ""}, follow_redirects=False)
+
+    assert get_effective("DISCOGS_TOKEN") == "existing-token"
+
+
+def test_save_config_ignores_non_overridable_keys():
+    client = TestClient(app)
+    client.post("/config", data={"CACHE_PATH": "/hacked", "STORE_PATH": "/hacked"}, follow_redirects=False)
+
+    settings = SettingsStore(os.environ["STORE_PATH"])
+    assert settings.get_all() == {}
+    settings.close()
+
+
+def test_config_page_shows_editable_inputs_for_overridable_fields(monkeypatch):
+    monkeypatch.setenv("LASTFM_USERNAME", "myuser")
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    assert 'name="LASTFM_USERNAME"' in response.text
+    assert 'value="myuser"' in response.text
+    assert 'name="LASTFM_API_KEY"' in response.text
+    assert 'type="password"' in response.text
+
+
+@respx.mock
+def test_config_page_shows_quality_profile_dropdown_when_lidarr_reachable(monkeypatch):
+    monkeypatch.setenv("LIDARR_URL", "http://lidarr.local")
+    monkeypatch.setenv("LIDARR_API_KEY", "key")
+    respx.get("http://lidarr.local/api/v1/qualityprofile").mock(
+        return_value=httpx.Response(200, json=[{"id": 1, "name": "Any"}, {"id": 3, "name": "Standard"}])
+    )
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    assert "<select" in response.text
+    assert "Standard (id 3)" in response.text
+
+
+def test_config_page_falls_back_to_text_input_when_lidarr_unreachable(monkeypatch):
+    monkeypatch.delenv("LIDARR_URL", raising=False)
+    monkeypatch.delenv("LIDARR_API_KEY", raising=False)
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    rows = response.text.split("<tr>")
+    profile_row = next(r for r in rows if "LIDARR_QUALITY_PROFILE_ID" in r)
+    assert 'name="LIDARR_QUALITY_PROFILE_ID"' in profile_row
+    assert "<select" not in profile_row

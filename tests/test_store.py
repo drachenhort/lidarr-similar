@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from lidarr_similar.models import Candidate
-from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
+from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList, SettingsStore
 
 
 def test_store_starts_empty(tmp_path):
@@ -155,3 +155,33 @@ def test_genre_ignore_list_ordered_most_recent_first(tmp_path):
     genre_ignore_list.add("Country")
 
     assert genre_ignore_list.list_ordered() == ["Country", "Rap"]
+
+
+def test_settings_store_roundtrip(tmp_path):
+    settings = SettingsStore(tmp_path / "settings.sqlite3")
+
+    assert settings.get("LASTFM_API_KEY") is None
+
+    settings.set("LASTFM_API_KEY", "abc123")
+
+    assert settings.get("LASTFM_API_KEY") == "abc123"
+    assert settings.get_all() == {"LASTFM_API_KEY": "abc123"}
+
+
+def test_settings_store_set_overwrites_existing_value(tmp_path):
+    settings = SettingsStore(tmp_path / "settings.sqlite3")
+    settings.set("LIDARR_URL", "http://old")
+
+    settings.set("LIDARR_URL", "http://new")
+
+    assert settings.get("LIDARR_URL") == "http://new"
+
+
+def test_settings_store_clear(tmp_path):
+    settings = SettingsStore(tmp_path / "settings.sqlite3")
+    settings.set("DISCOGS_TOKEN", "secret")
+
+    settings.clear("DISCOGS_TOKEN")
+
+    assert settings.get("DISCOGS_TOKEN") is None
+    assert settings.get_all() == {}

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
-from lidarr_similar.config import Config, describe_config
+from lidarr_similar.config import Config, describe_config, get_effective
+from lidarr_similar.store import SettingsStore
 
 
 @pytest.fixture(autouse=True)
-def base_env(monkeypatch):
+def base_env(monkeypatch, tmp_path):
     monkeypatch.setenv("LASTFM_API_KEY", "key")
     monkeypatch.setenv("LASTFM_USERNAME", "user")
+    monkeypatch.setenv("STORE_PATH", str(tmp_path / "store.sqlite3"))
 
 
 def test_from_env_missing_required_var_raises(monkeypatch):
@@ -81,3 +85,56 @@ def test_describe_config_valid_numeric_quality_profile_id(monkeypatch):
     items = {item.name: item for item in describe_config()}
 
     assert items["LIDARR_QUALITY_PROFILE_ID"].valid is True
+
+
+def test_settings_override_takes_priority_over_env_var(monkeypatch):
+    monkeypatch.setenv("LIDARR_URL", "http://from-env")
+    settings = SettingsStore(os.environ["STORE_PATH"])
+    settings.set("LIDARR_URL", "http://from-ui")
+    settings.close()
+
+    config = Config.from_env()
+
+    assert config.lidarr_url == "http://from-ui"
+
+
+def test_settings_override_can_satisfy_required_fields_without_env_var(monkeypatch):
+    monkeypatch.delenv("LASTFM_API_KEY", raising=False)
+    monkeypatch.delenv("LASTFM_USERNAME", raising=False)
+
+    settings = SettingsStore(os.environ["STORE_PATH"])
+    settings.set("LASTFM_API_KEY", "ui-key")
+    settings.set("LASTFM_USERNAME", "ui-user")
+    settings.close()
+
+    config = Config.from_env()
+
+    assert config.lastfm_api_key == "ui-key"
+    assert config.lastfm_username == "ui-user"
+
+
+def test_describe_config_reports_source(monkeypatch):
+    monkeypatch.setenv("LIDARR_URL", "http://from-env")
+
+    settings = SettingsStore(os.environ["STORE_PATH"])
+    settings.set("LIDARR_ROOT_FOLDER", "/music")
+    settings.close()
+
+    items = {item.name: item for item in describe_config()}
+
+    assert items["LIDARR_URL"].source == "environment"
+    assert items["LIDARR_ROOT_FOLDER"].source == "UI override"
+    assert items["LIDARR_API_KEY"].source is None
+
+
+def test_get_effective_prefers_override_over_env(monkeypatch):
+    monkeypatch.setenv("LIDARR_URL", "http://from-env")
+    settings = SettingsStore(os.environ["STORE_PATH"])
+    settings.set("LIDARR_URL", "http://from-ui")
+    settings.close()
+
+    assert get_effective("LIDARR_URL") == "http://from-ui"
+
+
+def test_get_effective_returns_none_when_unset():
+    assert get_effective("LIDARR_URL") is None

@@ -56,3 +56,17 @@ async def test_existing_artist_identifiers_skips_missing_mbid():
 
     assert names == {"No MBID Artist"}
     assert mbids == set()
+
+
+@respx.mock
+async def test_quality_profiles_returns_id_and_name():
+    respx.get("http://lidarr.local/api/v1/qualityprofile").mock(
+        return_value=httpx.Response(
+            200, json=[{"id": 1, "name": "Any"}, {"id": 2, "name": "Lossless"}, {"id": 3, "name": "Standard"}]
+        )
+    )
+
+    client = LidarrClient("http://lidarr.local", "key")
+    profiles = await client.quality_profiles()
+
+    assert profiles == [{"id": 1, "name": "Any"}, {"id": 2, "name": "Lossless"}, {"id": 3, "name": "Standard"}]

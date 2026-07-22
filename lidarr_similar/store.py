@@ -125,6 +125,37 @@ class CandidateStore:
         self._conn.close()
 
 
+class SettingsStore:
+    """User-editable config overrides (API tokens, URLs, ...), set via the web UI's
+    /config page. These take priority over environment variables when both are set -
+    see config.Config.from_env() - since env vars can't be durably changed by the
+    running process itself, but this SQLite table can."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._conn = sqlite3.connect(path)
+        self._conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        self._conn.commit()
+
+    def get(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def get_all(self) -> dict[str, str]:
+        rows = self._conn.execute("SELECT key, value FROM settings").fetchall()
+        return dict(rows)
+
+    def set(self, key: str, value: str) -> None:
+        self._conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        self._conn.commit()
+
+    def clear(self, key: str) -> None:
+        self._conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+        self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
 class GenreIgnoreList:
     """Genres the user never wants suggested (e.g. "Rap"), persisted across restarts and runs.
 
