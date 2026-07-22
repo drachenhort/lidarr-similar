@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 
 
 def normalize_name(name: str) -> str:
-    """Case- and diacritic-insensitive key so e.g. 'L'âme Immortelle' and 'L'Âme Immortelle' match."""
+    """Case-, diacritic-, and punctuation-insensitive key so artists match across sources
+    that stylize names differently - e.g. Last.fm's "SITD" vs Lidarr's "[:SITD:]", or
+    Deezer's ".38 Special" vs Lidarr's "38 Special". Collapses runs of whitespace left
+    behind by stripped punctuation so "L'Âme Immortelle" and "L'âme Immortelle" still match.
+    """
     stripped = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
-    return stripped.casefold()
+    alnum_only = re.sub(r"[^\w\s]", "", stripped, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", alnum_only).strip().casefold()
