@@ -75,6 +75,24 @@ def test_store_remove_drops_a_single_candidate(tmp_path):
     assert [c.name for c in store.load_all()] == ["B"]
 
 
+def test_store_mark_ignored_flags_and_unflags_a_single_candidate(tmp_path):
+    store = CandidateStore(tmp_path / "store.sqlite3")
+    store.replace_all(
+        [
+            Candidate(name="A", similarity=0.5, sources=["lastfm"]),
+            Candidate(name="B", similarity=0.4, sources=["lastfm"]),
+        ]
+    )
+
+    store.mark_ignored("A")
+    loaded = {c.name: c.ignored for c in store.load_all()}
+    assert loaded == {"A": True, "B": False}
+
+    store.mark_ignored("A", ignored=False)
+    loaded = {c.name: c.ignored for c in store.load_all()}
+    assert loaded == {"A": False, "B": False}
+
+
 def test_ignore_list_add_and_check(tmp_path):
     ignore_list = IgnoreList(tmp_path / "ignore.sqlite3")
 

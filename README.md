@@ -113,12 +113,15 @@ same as the preview CLI's `--min-score`.
 
 `LIDARR_URL` / `LIDARR_API_KEY` are optional here too, same as preview mode.
 
-Each row has two actions:
+Each row has actions depending on its state:
 - **Add to Lidarr** — looks the artist up in Lidarr and adds it directly, no need to leave
-  the page. Only shown once `LIDARR_URL`, `LIDARR_API_KEY`, `LIDARR_ROOT_FOLDER`, and
-  `LIDARR_QUALITY_PROFILE_ID` are all set; otherwise a hint explains what's missing.
-- **Ignore** — permanently excludes the artist from future discovery runs (persisted in
-  `STORE_PATH`) and removes it from the current view immediately.
+  the page. Only shown once `LIDARR_URL`, `LIDARR_API_KEY`, `LIDARR_ROOT_FOLDER` (a root
+  folder path Lidarr should use, e.g. `/music`), and `LIDARR_QUALITY_PROFILE_ID` (the
+  numeric ID from Lidarr's Settings → Profiles — not the profile's name) are all set;
+  otherwise a hint explains what's missing.
+- **Ignore** — permanently excludes the artist from future discovery runs. Ignored artists
+  aren't hidden: they stay visible, tagged "ignored" and pushed to the bottom of the list
+  regardless of score, with an **Unignore** button to bring them back.
 
 #### Docker / Unraid
 

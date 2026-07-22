@@ -71,7 +71,7 @@ async def test_discover_candidates_applies_discogs_enrichment():
     discogs.enrich.assert_awaited_once()
 
 
-async def test_discover_candidates_drops_ignored_names_before_enrichment():
+async def test_discover_candidates_flags_ignored_names_and_skips_their_enrichment():
     lastfm = AsyncMock()
     lastfm.top_artists.return_value = ["Seed A"]
     lastfm.similar_artists.return_value = [
@@ -89,7 +89,10 @@ async def test_discover_candidates_drops_ignored_names_before_enrichment():
         ignored_names={"skip me"},
     )
 
-    assert [c.name for c in candidates] == ["Keep Me"]
+    # ignored candidates are kept but pushed to the end, regardless of score
+    assert [c.name for c in candidates] == ["Keep Me", "Skip Me"]
+    assert next(c for c in candidates if c.name == "Skip Me").ignored is True
+    assert next(c for c in candidates if c.name == "Keep Me").ignored is False
     discogs.enrich.assert_awaited_once()
 
 

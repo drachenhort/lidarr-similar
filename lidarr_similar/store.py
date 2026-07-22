@@ -27,6 +27,7 @@ class CandidateStore:
                 discogs_latest_release_year TEXT,
                 deezer_genre TEXT,
                 already_in_library INTEGER NOT NULL DEFAULT 0,
+                ignored INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL
             )
             """
@@ -41,8 +42,8 @@ class CandidateStore:
             """
             INSERT INTO candidates
                 (name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles,
-                 discogs_latest_release_year, deezer_genre, already_in_library, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 discogs_latest_release_year, deezer_genre, already_in_library, ignored, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -56,6 +57,7 @@ class CandidateStore:
                     c.discogs_latest_release_year,
                     c.deezer_genre,
                     int(c.already_in_library),
+                    int(c.ignored),
                     now,
                 )
                 for c in candidates
@@ -66,7 +68,7 @@ class CandidateStore:
     def load_all(self) -> list[Candidate]:
         rows = self._conn.execute(
             "SELECT name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles, "
-            "discogs_latest_release_year, deezer_genre, already_in_library "
+            "discogs_latest_release_year, deezer_genre, already_in_library, ignored "
             "FROM candidates ORDER BY similarity DESC"
         ).fetchall()
         return [
@@ -81,6 +83,7 @@ class CandidateStore:
                 discogs_latest_release_year=row[7],
                 deezer_genre=row[8],
                 already_in_library=bool(row[9]),
+                ignored=bool(row[10]),
             )
             for row in rows
         ]
@@ -94,8 +97,13 @@ class CandidateStore:
         self._conn.execute("UPDATE candidates SET already_in_library = 1 WHERE name = ?", (name,))
         self._conn.commit()
 
+    def mark_ignored(self, name: str, ignored: bool = True) -> None:
+        """Flag (or unflag) a single candidate as ignored, without a full replace_all()."""
+        self._conn.execute("UPDATE candidates SET ignored = ? WHERE name = ?", (int(ignored), name))
+        self._conn.commit()
+
     def remove(self, name: str) -> None:
-        """Drop a single candidate, e.g. right after the user ignores it."""
+        """Drop a single candidate entirely."""
         self._conn.execute("DELETE FROM candidates WHERE name = ?", (name,))
         self._conn.commit()
 

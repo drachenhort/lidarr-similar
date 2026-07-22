@@ -15,8 +15,11 @@ index page fills in with results as they're found instead of staying empty
 until the whole run finishes.
 
 Each row offers "Add to Lidarr" (requires LIDARR_URL/API_KEY/ROOT_FOLDER/
-QUALITY_PROFILE_ID) and "Ignore" (persisted in IgnoreList, excluded from
-future runs and removed from the current view immediately).
+QUALITY_PROFILE_ID) and "Ignore" (persisted in IgnoreList and excluded from
+future discovery runs). Ignored artists stay visible rather than vanishing -
+they're tagged "ignored" and pushed to the bottom of the list, with an
+"Unignore" button, so a previously-ignored artist that resurfaces in a new
+run is called out instead of silently disappearing.
 """
 
 from __future__ import annotations
@@ -37,7 +40,6 @@ from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
 from lidarr_similar.lidarr import LidarrClient
 from lidarr_similar.models import Candidate
-from lidarr_similar.naming import normalize_name
 from lidarr_similar.pipeline import discover_candidates
 from lidarr_similar.store import CandidateStore, IgnoreList
 
@@ -64,16 +66,12 @@ def _store_path() -> str:
 @app.get("/", response_class=HTMLResponse)
 async def index(min_score: float = 0.0, page: int = 1, message: str | None = None, error: str | None = None) -> str:
     store = CandidateStore(_store_path())
-    ignore_list = IgnoreList(_store_path())
     try:
-        ignored = ignore_list.names_normalized()
-        candidates = [
-            c for c in store.load_all() if c.similarity >= min_score and normalize_name(c.name) not in ignored
-        ]
+        candidates = [c for c in store.load_all() if c.similarity >= min_score]
+        candidates.sort(key=lambda c: (c.ignored, -c.similarity))
         last_updated = store.last_updated()
     finally:
         store.close()
-        ignore_list.close()
 
     lidarr_add_enabled = all(
         os.environ.get(var) for var in ("LIDARR_URL", "LIDARR_API_KEY", "LIDARR_ROOT_FOLDER", "LIDARR_QUALITY_PROFILE_ID")
@@ -106,11 +104,24 @@ async def ignore(name: str = Form(...)) -> RedirectResponse:
     store = CandidateStore(_store_path())
     try:
         ignore_list.add(name)
-        store.remove(name)
+        store.mark_ignored(name, ignored=True)
     finally:
         ignore_list.close()
         store.close()
-    return RedirectResponse(f"/?{urlencode({'message': f'Ignored {name}.'})}", status_code=303)
+    return RedirectResponse(f"/?{urlencode({'message': f'Ignored {name}. It will be excluded from future runs.'})}", status_code=303)
+
+
+@app.post("/unignore")
+async def unignore(name: str = Form(...)) -> RedirectResponse:
+    ignore_list = IgnoreList(_store_path())
+    store = CandidateStore(_store_path())
+    try:
+        ignore_list.remove(name)
+        store.mark_ignored(name, ignored=False)
+    finally:
+        ignore_list.close()
+        store.close()
+    return RedirectResponse(f"/?{urlencode({'message': f'Unignored {name}.'})}", status_code=303)
 
 
 @app.post("/add")
@@ -164,6 +175,15 @@ async def _run_discovery(config: Config) -> None:
     async def on_progress(candidates: list[Candidate]) -> None:
         _status.total = len(candidates)
         _status.enriched = sum(1 for c in candidates if c.discogs_id is not None or c.deezer_genre is not None)
+        # Preserve already_in_library/ignored flags set via /add or /ignore while this run was
+        # in progress - the pipeline computed both from a snapshot taken before the run started,
+        # so without this a manual action mid-run gets silently reverted by the next snapshot.
+        previous_flags = {c.name: (c.already_in_library, c.ignored) for c in store.load_all()}
+        for candidate in candidates:
+            prev = previous_flags.get(candidate.name)
+            if prev is not None:
+                candidate.already_in_library = candidate.already_in_library or prev[0]
+                candidate.ignored = candidate.ignored or prev[1]
         store.replace_all(candidates)
 
     try:
@@ -218,7 +238,7 @@ def render_page(
       <thead>
         <tr>
           <th>#</th><th>Artist</th><th>Score</th><th>Sources</th>
-          <th>Last Release</th><th>In Library</th><th>Genres</th><th>Actions</th>
+          <th>Last Release</th><th>Status</th><th>Genres</th><th>Actions</th>
         </tr>
       </thead>
       <tbody>{rows}</tbody>
@@ -259,7 +279,9 @@ def render_page(
     form {{ display: inline; }}
     .toolbar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }}
     .in-library {{ color: #888; }}
+    .ignored-row {{ color: #aaa; }}
     .badge {{ background: #eef; color: #33a; border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.85em; }}
+    .badge-ignored {{ background: #f5eef0; color: #a33; }}
     .banner {{ padding: 0.5rem 0.75rem; border-radius: 4px; }}
     .banner.error {{ background: #fdecea; color: #b00020; }}
     .banner.ok {{ background: #eaf7ea; color: #1a7a1a; }}
@@ -305,12 +327,29 @@ def _render_pagination(page: int, total_pages: int, min_score: float) -> str:
 def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> str:
     genres = ", ".join(candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else []))
     last_release = html.escape(candidate.discogs_latest_release_year) if candidate.discogs_latest_release_year else "-"
-    in_library = '<span class="badge">already in library</span>' if candidate.already_in_library else "-"
-    row_class = ' class="in-library"' if candidate.already_in_library else ""
     name_attr = html.escape(candidate.name, quote=True)
 
-    actions = ""
-    if not candidate.already_in_library:
+    badges = []
+    if candidate.already_in_library:
+        badges.append('<span class="badge">already in library</span>')
+    if candidate.ignored:
+        badges.append('<span class="badge badge-ignored">ignored</span>')
+    status = " ".join(badges) or "-"
+
+    row_class = ""
+    if candidate.ignored:
+        row_class = ' class="ignored-row"'
+    elif candidate.already_in_library:
+        row_class = ' class="in-library"'
+
+    if candidate.ignored:
+        actions = (
+            f'<form method="post" action="/unignore"><input type="hidden" name="name" value="{name_attr}">'
+            f'<button type="submit">Unignore</button></form>'
+        )
+    elif candidate.already_in_library:
+        actions = ""
+    else:
         add_button = (
             f'<form method="post" action="/add"><input type="hidden" name="name" value="{name_attr}">'
             f'<button type="submit">Add to Lidarr</button></form>'
@@ -330,7 +369,7 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
         f"<td>{candidate.similarity:.2f}</td>"
         f"<td>{html.escape(','.join(candidate.sources))}</td>"
         f"<td>{last_release}</td>"
-        f"<td>{in_library}</td>"
+        f"<td>{status}</td>"
         f"<td>{html.escape(genres) or '-'}</td>"
         f'<td class="actions">{actions}</td>'
         "</tr>"

@@ -32,7 +32,7 @@ class Config:
             lidarr_url=os.environ.get("LIDARR_URL"),
             lidarr_api_key=os.environ.get("LIDARR_API_KEY"),
             lidarr_root_folder=os.environ.get("LIDARR_ROOT_FOLDER"),
-            lidarr_quality_profile_id=int(quality_profile_id) if quality_profile_id else None,
+            lidarr_quality_profile_id=_parse_int(quality_profile_id),
             cache_path=os.environ.get("CACHE_PATH", "lidarr_similar.sqlite3"),
             store_path=os.environ.get("STORE_PATH", "lidarr_similar_store.sqlite3"),
         )
@@ -43,3 +43,14 @@ def _require(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
+
+
+def _parse_int(value: str | None) -> int | None:
+    """LIDARR_QUALITY_PROFILE_ID must be the profile's numeric ID, not its display name.
+    Treat an unparseable value as unset rather than crashing the whole app."""
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None

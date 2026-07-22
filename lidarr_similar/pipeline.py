@@ -41,8 +41,10 @@ async def discover_candidates(
     current best-known candidate list after the initial merge and again after
     each candidate is enriched, so a caller (e.g. the web UI) can persist and
     display partial results instead of waiting for the entire run to finish.
-    Candidates matching ignored_names (case/diacritic-insensitive) are dropped
-    right after merge, before any enrichment API calls are spent on them.
+    Candidates matching ignored_names (case/diacritic-insensitive) are kept in
+    the results and flagged via `Candidate.ignored` - so the UI can still show
+    "you ignored this" - but skip enrichment API calls, since there's no point
+    spending Discogs/Deezer lookups on an artist the user doesn't want surfaced.
     """
     seed_artists = await lastfm.top_artists(username, limit=top_n_seed_artists)
 
@@ -55,29 +57,34 @@ async def discover_candidates(
     merged = merge_candidates(candidate_lists)
     existing_normalized = {normalize_name(name) for name in existing_artist_names}
     ignored_normalized = {normalize_name(name) for name in ignored_names}
-    candidates = sorted(
-        (c for c in merged.values() if normalize_name(c.name) not in ignored_normalized),
-        key=lambda c: c.similarity,
-        reverse=True,
-    )
+    candidates = list(merged.values())
     for candidate in candidates:
         candidate.already_in_library = normalize_name(candidate.name) in existing_normalized
+        candidate.ignored = normalize_name(candidate.name) in ignored_normalized
+    candidates = _sort_candidates(candidates)
 
     if on_progress is not None:
         await on_progress(candidates)
 
     if discogs is not None:
         for i, candidate in enumerate(candidates):
-            candidates[i] = await discogs.enrich(candidate)
-            if on_progress is not None:
-                await on_progress(candidates)
+            if not candidate.ignored:
+                candidates[i] = await discogs.enrich(candidate)
+                if on_progress is not None:
+                    await on_progress(candidates)
     if deezer is not None and deezer_genre_enrichment:
         for i, candidate in enumerate(candidates):
-            candidates[i] = await deezer.enrich_genre(candidate)
-            if on_progress is not None:
-                await on_progress(candidates)
+            if not candidate.ignored:
+                candidates[i] = await deezer.enrich_genre(candidate)
+                if on_progress is not None:
+                    await on_progress(candidates)
 
-    return sorted(candidates, key=lambda c: c.similarity, reverse=True)
+    return _sort_candidates(candidates)
+
+
+def _sort_candidates(candidates: list[Candidate]) -> list[Candidate]:
+    """Non-ignored candidates first (by similarity, highest first), ignored ones pushed to the end."""
+    return sorted(candidates, key=lambda c: (c.ignored, -c.similarity))
 
 
 def merge_candidates(candidate_lists: list[list[Candidate]]) -> dict[str, Candidate]:

@@ -180,6 +180,44 @@ async def test_run_discovery_persists_candidates_and_clears_running_flag(tmp_pat
     store.close()
 
 
+async def test_run_discovery_preserves_mid_run_ignore(tmp_path, monkeypatch):
+    """A candidate ignored via the UI while a run is in progress must not be un-ignored
+    by the next progress snapshot, even though the pipeline computed ignored=False for it
+    at the start of the run (before the user clicked Ignore)."""
+    candidates = [Candidate(name="X", similarity=0.5, sources=["lastfm"], ignored=False)]
+
+    async def fake_discover_candidates(*args, on_progress=None, **kwargs):
+        if on_progress is not None:
+            await on_progress(candidates)  # first snapshot: not yet ignored
+            store = CandidateStore(config.store_path)
+            store.mark_ignored("X", ignored=True)  # simulate a mid-run /ignore click
+            store.close()
+            await on_progress(candidates)  # second snapshot: pipeline still thinks ignored=False
+        return candidates
+
+    monkeypatch.setattr(web, "discover_candidates", fake_discover_candidates)
+    config = Config(
+        lastfm_api_key="key",
+        lastfm_username="user",
+        discogs_token=None,
+        discogs_enabled=False,
+        deezer_enabled=False,
+        lidarr_url=None,
+        lidarr_api_key=None,
+        lidarr_root_folder=None,
+        lidarr_quality_profile_id=None,
+        cache_path=str(tmp_path / "cache.sqlite3"),
+        store_path=str(tmp_path / "store.sqlite3"),
+    )
+
+    await web._run_discovery(config)
+
+    store = CandidateStore(config.store_path)
+    candidate = next(c for c in store.load_all() if c.name == "X")
+    assert candidate.ignored is True
+    store.close()
+
+
 def test_index_paginates_results(tmp_path, monkeypatch):
     store_path = tmp_path / "store.sqlite3"
     monkeypatch.setenv("STORE_PATH", str(store_path))
@@ -216,29 +254,34 @@ def test_index_hides_no_pagination_controls_for_single_page(tmp_path, monkeypatc
     assert 'class="pagination"' not in response.text
 
 
-def test_index_excludes_ignored_artists(tmp_path, monkeypatch):
+def test_index_shows_ignored_artists_with_notice_pushed_to_bottom(tmp_path, monkeypatch):
     store_path = tmp_path / "store.sqlite3"
     monkeypatch.setenv("STORE_PATH", str(store_path))
     store = CandidateStore(store_path)
     store.replace_all(
         [
-            Candidate(name="Ignored Artist", similarity=0.9, sources=["lastfm"]),
-            Candidate(name="Kept Artist", similarity=0.8, sources=["lastfm"]),
+            Candidate(name="Ignored Artist", similarity=0.9, sources=["lastfm"], ignored=True),
+            Candidate(name="Kept Artist", similarity=0.5, sources=["lastfm"], ignored=False),
         ]
     )
     store.close()
-    ignore_list = IgnoreList(store_path)
-    ignore_list.add("Ignored Artist")
-    ignore_list.close()
 
     client = TestClient(app)
     response = client.get("/")
 
-    assert "Ignored Artist" not in response.text
+    assert "Ignored Artist" in response.text
     assert "Kept Artist" in response.text
+    rows = response.text.split("<tr")
+    ignored_row = next(row for row in rows if "Ignored Artist" in row)
+    kept_row = next(row for row in rows if "Kept Artist" in row)
+    assert "badge-ignored" in ignored_row
+    assert "Unignore" in ignored_row
+    assert "badge-ignored" not in kept_row
+    # ignored artist is pushed below the kept one despite higher score
+    assert response.text.index("Kept Artist") < response.text.index("Ignored Artist")
 
 
-def test_ignore_endpoint_removes_candidate_and_persists(tmp_path, monkeypatch):
+def test_ignore_endpoint_marks_candidate_and_persists(tmp_path, monkeypatch):
     store_path = tmp_path / "store.sqlite3"
     monkeypatch.setenv("STORE_PATH", str(store_path))
     store = CandidateStore(store_path)
@@ -256,7 +299,34 @@ def test_ignore_endpoint_removes_candidate_and_persists(tmp_path, monkeypatch):
     ignore_list.close()
 
     store = CandidateStore(store_path)
-    assert store.load_all() == []
+    candidate = next(c for c in store.load_all() if c.name == "Unwanted")
+    assert candidate.ignored is True
+    store.close()
+
+
+def test_unignore_endpoint_unmarks_candidate_and_persists(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all([Candidate(name="Reconsidered", similarity=0.9, sources=["lastfm"], ignored=True)])
+    store.close()
+    ignore_list = IgnoreList(store_path)
+    ignore_list.add("Reconsidered")
+    ignore_list.close()
+
+    client = TestClient(app)
+    response = client.post("/unignore", data={"name": "Reconsidered"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+
+    ignore_list = IgnoreList(store_path)
+    assert ignore_list.is_ignored("Reconsidered") is False
+    ignore_list.close()
+
+    store = CandidateStore(store_path)
+    candidate = next(c for c in store.load_all() if c.name == "Reconsidered")
+    assert candidate.ignored is False
     store.close()
 
 
