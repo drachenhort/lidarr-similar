@@ -4,6 +4,8 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+## v0.1.0 - 2026-07-22
+
 ### Changed
 - Redesigned the web UI's visual style: dark "mixing console" theme (deep ink background, amber primary accent, teal for "in library", rose for "ignored"), a serif wordmark, and monospace formatting for numeric table data. Signature touch: each row's similarity score is shown as a small amber/teal meter bar next to the number, echoing an analog VU meter. All 116 existing tests passed unchanged, confirming the redesign only touched presentation, not behavior.
 - Fixed a layout bug found live right after the redesign: with many data columns, the results table overflows a typical browser window and the rightmost Actions column (Add to Lidarr/Ignore/Unignore buttons) scrolled out of view, requiring users to hunt for a horizontal scrollbar to reach them. That column is now `position: sticky; right: 0` within the table's scroll container, so it stays reachable regardless of horizontal scroll position. Verified live.
