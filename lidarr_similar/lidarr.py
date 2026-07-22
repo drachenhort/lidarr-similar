@@ -14,9 +14,21 @@ class LidarrClient:
         )
 
     async def existing_artist_names(self) -> set[str]:
+        return {artist["artistName"] for artist in await self._fetch_artists()}
+
+    async def existing_artist_identifiers(self) -> tuple[set[str], set[str]]:
+        """Names and MusicBrainz IDs (Lidarr's `foreignArtistId`) of everything already in the
+        library, fetched in one request. MBIDs are an exact-identity match - preferred over
+        name matching, which needs normalization and can still miss genuine spelling variants."""
+        artists = await self._fetch_artists()
+        names = {artist["artistName"] for artist in artists}
+        mbids = {artist["foreignArtistId"] for artist in artists if artist.get("foreignArtistId")}
+        return names, mbids
+
+    async def _fetch_artists(self) -> list[dict]:
         response = await self._http.get("/api/v1/artist")
         response.raise_for_status()
-        return {artist["artistName"] for artist in response.json()}
+        return response.json()
 
     async def lookup_artist(self, name: str) -> dict | None:
         response = await self._http.get("/api/v1/artist/lookup", params={"term": name})

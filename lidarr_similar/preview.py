@@ -65,13 +65,16 @@ async def run(argv: list[str] | None = None) -> None:
     )
 
     try:
-        existing = await lidarr.existing_artist_names() if lidarr is not None else set()
+        existing_names, existing_mbids = (
+            await lidarr.existing_artist_identifiers() if lidarr is not None else (set(), set())
+        )
         candidates = await discover_candidates(
             lastfm,
             config.lastfm_username,
             discogs,
-            existing,
+            existing_names,
             deezer=deezer,
+            existing_artist_mbids=existing_mbids,
             top_n_seed_artists=args.seed_artists,
             similar_per_artist=args.similar_per_artist,
         )

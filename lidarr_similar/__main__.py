@@ -29,9 +29,14 @@ async def run() -> None:
     )
 
     try:
-        existing = await lidarr.existing_artist_names()
+        existing_names, existing_mbids = await lidarr.existing_artist_identifiers()
         candidates = await discover_candidates(
-            lastfm, config.lastfm_username, discogs, existing, deezer=deezer
+            lastfm,
+            config.lastfm_username,
+            discogs,
+            existing_names,
+            deezer=deezer,
+            existing_artist_mbids=existing_mbids,
         )
         for candidate in candidates:
             print(

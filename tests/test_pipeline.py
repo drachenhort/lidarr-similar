@@ -22,6 +22,30 @@ async def test_discover_candidates_dedupes_and_sorts_by_similarity():
     assert next(c for c in candidates if c.name == "X").similarity == 0.8
 
 
+async def test_discover_candidates_flags_via_mbid_when_name_would_miss():
+    lastfm = AsyncMock()
+    lastfm.top_artists.return_value = ["Seed A"]
+    lastfm.similar_artists.return_value = [
+        # Genuine spelling variant Last.fm gave us - not just punctuation/case, so
+        # name-normalization alone wouldn't catch it, but the MBID is authoritative.
+        Candidate(name="Beatles, The", similarity=0.9, mbid="b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"),
+        Candidate(name="New Artist", similarity=0.7),
+    ]
+
+    candidates = await discover_candidates(
+        lastfm,
+        username="user",
+        discogs=None,
+        existing_artist_names=set(),
+        existing_artist_mbids={"b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"},
+    )
+
+    flagged = next(c for c in candidates if c.name == "Beatles, The")
+    unflagged = next(c for c in candidates if c.name == "New Artist")
+    assert flagged.already_in_library is True
+    assert unflagged.already_in_library is False
+
+
 async def test_discover_candidates_flags_existing_lidarr_artists_instead_of_dropping():
     lastfm = AsyncMock()
     lastfm.top_artists.return_value = ["Seed A"]

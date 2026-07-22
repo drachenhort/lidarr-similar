@@ -35,6 +35,7 @@ async def discover_candidates(
     top_n_seed_artists: int = 20,
     similar_per_artist: int = 10,
     ignored_names: set[str] = frozenset(),
+    existing_artist_mbids: set[str] = frozenset(),
     on_progress: ProgressCallback | None = None,
 ) -> list[Candidate]:
     """Run discovery end to end. If on_progress is given, it's awaited with the
@@ -45,6 +46,11 @@ async def discover_candidates(
     the results and flagged via `Candidate.ignored` - so the UI can still show
     "you ignored this" - but skip enrichment API calls, since there's no point
     spending Discogs/Deezer lookups on an artist the user doesn't want surfaced.
+
+    already_in_library prefers an exact MusicBrainz ID match (existing_artist_mbids,
+    from Lidarr's foreignArtistId - Lidarr is itself MusicBrainz-based) over name
+    matching whenever Last.fm supplied a candidate's mbid, since normalized-name
+    matching can still miss genuine spelling variants that aren't just punctuation/case.
     """
     seed_artists = await lastfm.top_artists(username, limit=top_n_seed_artists)
 
@@ -59,7 +65,9 @@ async def discover_candidates(
     ignored_normalized = {normalize_name(name) for name in ignored_names}
     candidates = list(merged.values())
     for candidate in candidates:
-        candidate.already_in_library = normalize_name(candidate.name) in existing_normalized
+        candidate.already_in_library = (candidate.mbid in existing_artist_mbids) or (
+            normalize_name(candidate.name) in existing_normalized
+        )
         candidate.ignored = normalize_name(candidate.name) in ignored_normalized
     candidates = _sort_candidates(candidates)
 
