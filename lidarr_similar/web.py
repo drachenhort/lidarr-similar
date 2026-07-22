@@ -40,11 +40,13 @@ import asyncio
 import html
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from lidarr_similar import __version__
 from lidarr_similar.cache import Cache
 from lidarr_similar.config import OVERRIDABLE_KEYS, Config, ConfigItem, describe_config, get_effective
 from lidarr_similar.deezer import DeezerClient
@@ -112,6 +114,7 @@ _BASE_STYLE = """
       color: var(--paper);
     }
     .wordmark .accent { color: var(--amber); }
+    .version-badge { font-family: var(--font-mono); font-size: 0.42em; font-weight: 400; color: var(--dim); vertical-align: middle; margin-left: 0.6rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; }
     .nav a { text-decoration: none; font-size: 0.85em; letter-spacing: 0.02em; text-transform: uppercase; color: var(--dim); }
     .nav a:hover { color: var(--amber); }
 
@@ -234,6 +237,15 @@ def _describe(error: Exception) -> str:
     confirmed live, this silently hid the error banner entirely, since the template only
     renders it when status.error is truthy. Always fall back to the exception's type name."""
     return str(error) or type(error).__name__
+
+
+def _format_updated(raw: str) -> str:
+    """SQLite stores updated_at as datetime.isoformat() (UTC, with microseconds) -
+    display a normalized, human-readable date/time instead of the raw ISO string."""
+    try:
+        return datetime.fromisoformat(raw).strftime("%Y-%m-%d %H:%M UTC")
+    except ValueError:
+        return html.escape(raw)
 
 
 def _is_lidarr_add_enabled() -> bool:
@@ -578,7 +590,7 @@ def render_page(
         _render_row(rank, c, lidarr_add_enabled)
         for rank, c in enumerate(page_items, start=(page - 1) * PAGE_SIZE + 1)
     )
-    updated_line = f"Last updated: {html.escape(last_updated)}" if last_updated else "No discovery run yet."
+    updated_line = f"Last updated: {_format_updated(last_updated)}" if last_updated else "No discovery run yet."
     body = "<p>No candidates to show.</p>" if not candidates else f"""
     <div class="table-wrap">
     <table>
@@ -623,7 +635,7 @@ def render_page(
 </head>
 <body>
   <div class="site-header">
-    <h1 class="wordmark">lidarr<span class="accent">‑</span>similar</h1>
+    <h1 class="wordmark">lidarr<span class="accent">‑</span>similar<span class="version-badge">v{html.escape(__version__)}</span></h1>
     <nav class="nav"><a href="/config">Configuration status</a></nav>
   </div>
   {_render_ignore_list(ignored_names)}
