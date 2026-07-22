@@ -411,18 +411,18 @@ def render_page(
 
 
 def _render_ignore_list(ignored_names: list[str]) -> str:
-    if not ignored_names:
-        return ""
     items = "".join(
         f"<li><span>{html.escape(name)}</span>"
         f'<form method="post" action="/unignore"><input type="hidden" name="name" value="{html.escape(name, quote=True)}">'
         '<button type="submit">Unignore</button></form></li>'
         for name in ignored_names
     )
+    summary = f"Ignored artists ({len(ignored_names)})" if ignored_names else "Ignored artists"
+    open_attr = " open" if ignored_names else ""
     return f"""
-    <details class="ignore-list">
-      <summary>Ignored artists ({len(ignored_names)})</summary>
-      <ul>{items}</ul>
+    <details class="ignore-list"{open_attr}>
+      <summary>{summary}</summary>
+      <ul>{items or "<li>None yet.</li>"}</ul>
     </details>
     """
 
@@ -435,8 +435,9 @@ def _render_genre_ignore_list(ignored_genres: list[str]) -> str:
         for genre in ignored_genres
     )
     summary = f"Ignored genres ({len(ignored_genres)})" if ignored_genres else "Ignored genres"
+    open_attr = " open" if ignored_genres else ""
     return f"""
-    <details class="ignore-list">
+    <details class="ignore-list"{open_attr}>
       <summary>{summary}</summary>
       <ul>{items}</ul>
       <form class="genre-form" method="post" action="/ignore-genre">

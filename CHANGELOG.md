@@ -4,6 +4,9 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+### Fixed
+- Ignoring an artist looked like it silently failed: it was actually persisted correctly (verified in the store), but the "Ignored artists" panel didn't render at all when empty (nothing to click before you knew it existed) and stayed collapsed by default even once populated - meanwhile the ignored artist itself vanished from view, pushed to the bottom of a different results page. Found live via user report. Both panels now always render (with a "None yet." placeholder when empty) and auto-expand via the `open` attribute as soon as they have entries.
+
 ### Added
 - ListenBrainz popularity enrichment: `Candidate.listenbrainz_listeners`, shown as an "LB Listeners" column alongside Deezer's "Popularity" in both the preview CLI and web UI. ListenBrainz's dedicated `/1/popularity/artist` endpoint is disabled server-side ("high load", confirmed live), so this uses its per-artist `/1/stats/artist/{mbid}/listeners` stats endpoint instead. Requires a candidate's MBID (from Last.fm, same one now used for library matching), so coverage is roughly the same ~65% as MBID availability; skipped entirely for candidates without one. New `LISTENBRAINZ_ENABLED` config (default `true`) and `--no-listenbrainz` preview flag.
 

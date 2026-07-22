@@ -402,6 +402,34 @@ def test_index_shows_ignored_genres_section(tmp_path, monkeypatch):
 
     assert "Ignored genres (1)" in response.text
     assert "Rap" in response.text
+    # populated panels should be expanded by default, not require a click to reveal
+    assert '<details class="ignore-list" open>' in response.text
+
+
+def test_index_shows_empty_ignore_panels_before_anything_is_ignored(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORE_PATH", str(tmp_path / "store.sqlite3"))
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    # panels must be discoverable even with nothing ignored yet, not silently absent
+    assert "Ignored artists" in response.text
+    assert "Ignored genres" in response.text
+
+
+def test_index_ignored_artists_panel_open_when_populated(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    ignore_list = IgnoreList(store_path)
+    ignore_list.add("Peter Maffay")
+    ignore_list.close()
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert "Ignored artists (1)" in response.text
+    assert "Peter Maffay" in response.text
+    assert '<details class="ignore-list" open>' in response.text
 
 
 def test_ignore_genre_endpoint_bans_genre_and_flags_matching_candidates(tmp_path, monkeypatch):
