@@ -243,9 +243,11 @@ toggle env vars pre-declared with descriptions). Two ways to use it:
   `https://github.com/drachenhort/lidarr-similar` as a template repository - CA will
   pick up `unraid-template.xml` automatically.
 
-Getting it listed in the public CA app store itself requires a separate PR against
-[Community Applications' template list](https://github.com/Squidly271/AppFeed) once the
-project is stable enough to submit.
+Getting it listed in the public CA app store itself is a separate, interactive step at
+[ca.unraid.net/submit](https://ca.unraid.net/submit) - it live-scans this repository
+(parsing `unraid-template.xml`, checking for duplicate listings, and previewing the
+resulting listing) and requires submitting under your own GitHub account, so it isn't
+something that can be done on your behalf.
 
 ## Development
 
