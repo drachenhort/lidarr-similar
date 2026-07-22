@@ -17,6 +17,7 @@ from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
 from lidarr_similar.lidarr import LidarrClient
+from lidarr_similar.listenbrainz import ListenBrainzClient
 from lidarr_similar.models import Candidate
 from lidarr_similar.pipeline import discover_candidates
 
@@ -41,6 +42,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-deezer", action="store_true", help="Disable the Deezer source")
     parser.add_argument("--no-discogs", action="store_true", help="Disable Discogs enrichment")
     parser.add_argument(
+        "--no-listenbrainz", action="store_true", help="Disable ListenBrainz popularity enrichment"
+    )
+    parser.add_argument(
         "--no-lidarr", action="store_true", help="Skip Lidarr entirely, even if credentials are set"
     )
     return parser.parse_args(argv)
@@ -53,6 +57,7 @@ async def run(argv: list[str] | None = None) -> None:
 
     lastfm = LastFmClient(config.lastfm_api_key)
     deezer = DeezerClient(cache) if config.deezer_enabled and not args.no_deezer else None
+    listenbrainz = ListenBrainzClient(cache) if config.listenbrainz_enabled and not args.no_listenbrainz else None
     discogs = (
         DiscogsEnricher(config.discogs_token, cache)
         if config.discogs_enabled and config.discogs_token and not args.no_discogs
@@ -74,6 +79,7 @@ async def run(argv: list[str] | None = None) -> None:
             discogs,
             existing_names,
             deezer=deezer,
+            listenbrainz=listenbrainz,
             existing_artist_mbids=existing_mbids,
             top_n_seed_artists=args.seed_artists,
             similar_per_artist=args.similar_per_artist,
@@ -85,6 +91,8 @@ async def run(argv: list[str] | None = None) -> None:
         await lastfm.aclose()
         if deezer is not None:
             await deezer.aclose()
+        if listenbrainz is not None:
+            await listenbrainz.aclose()
         if discogs is not None:
             await discogs.aclose()
         if lidarr is not None:
@@ -105,7 +113,7 @@ def print_table(candidates: list[Candidate], library_check_active: bool) -> None
     name_width = max(name_width, len("Artist"))
 
     header = (
-        f"{'#':>3}  {'Artist':<{name_width}}  {'Score':>5}  {'Sources':<14}  {'Popularity':>10}  "
+        f"{'#':>3}  {'Artist':<{name_width}}  {'Score':>5}  {'Sources':<14}  {'DeezerFans':>10}  {'LBListeners':>11}  "
         f"{'Last Release':<12}  {'In Library':<10}  Genres"
     )
     print(header)
@@ -115,11 +123,12 @@ def print_table(candidates: list[Candidate], library_check_active: bool) -> None
         sources = ",".join(candidate.sources) or "-"
         genres = ", ".join(candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else [])) or "-"
         popularity = f"{candidate.popularity:,}" if candidate.popularity is not None else "-"
+        lb_listeners = f"{candidate.listenbrainz_listeners:,}" if candidate.listenbrainz_listeners is not None else "-"
         last_release = candidate.discogs_latest_release_year or "-"
         in_library = "yes" if candidate.already_in_library else "-"
         print(
             f"{rank:>3}  {candidate.name:<{name_width}}  {candidate.similarity:>5.2f}  "
-            f"{sources:<14}  {popularity:>10}  {last_release:<12}  {in_library:<10}  {genres}"
+            f"{sources:<14}  {popularity:>10}  {lb_listeners:>11}  {last_release:<12}  {in_library:<10}  {genres}"
         )
 
     print()

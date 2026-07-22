@@ -10,6 +10,7 @@ from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
 from lidarr_similar.lidarr import LidarrClient
+from lidarr_similar.listenbrainz import ListenBrainzClient
 from lidarr_similar.pipeline import discover_candidates
 
 
@@ -22,6 +23,7 @@ async def run() -> None:
     lastfm = LastFmClient(config.lastfm_api_key)
     lidarr = LidarrClient(config.lidarr_url, config.lidarr_api_key)
     deezer = DeezerClient(cache) if config.deezer_enabled else None
+    listenbrainz = ListenBrainzClient(cache) if config.listenbrainz_enabled else None
     discogs = (
         DiscogsEnricher(config.discogs_token, cache)
         if config.discogs_enabled and config.discogs_token
@@ -36,18 +38,22 @@ async def run() -> None:
             discogs,
             existing_names,
             deezer=deezer,
+            listenbrainz=listenbrainz,
             existing_artist_mbids=existing_mbids,
         )
         for candidate in candidates:
             print(
                 f"{candidate.name} ({candidate.similarity:.2f}) {candidate.sources} "
-                f"{candidate.discogs_genres} {candidate.deezer_genre}"
+                f"{candidate.discogs_genres} {candidate.deezer_genre} "
+                f"popularity={candidate.popularity} lb_listeners={candidate.listenbrainz_listeners}"
             )
     finally:
         await lastfm.aclose()
         await lidarr.aclose()
         if deezer is not None:
             await deezer.aclose()
+        if listenbrainz is not None:
+            await listenbrainz.aclose()
         if discogs is not None:
             await discogs.aclose()
         cache.close()

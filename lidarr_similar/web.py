@@ -28,6 +28,10 @@ check, since genres only become known after enrichment and different
 sources use different granularity (e.g. Discogs "Hip Hop" vs Deezer
 "Rap/Hip Hop"). Genre-banned candidates are tagged like artist-ignores but
 have no per-row Unignore, since undoing them means un-banning the genre.
+
+Two independent popularity signals are shown: Deezer fan count and
+ListenBrainz distinct-listener count. ListenBrainz needs a candidate's
+MBID, so it's only populated when Last.fm supplied one.
 """
 
 from __future__ import annotations
@@ -47,6 +51,7 @@ from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
 from lidarr_similar.lidarr import LidarrClient
+from lidarr_similar.listenbrainz import ListenBrainzClient
 from lidarr_similar.models import Candidate
 from lidarr_similar.pipeline import discover_candidates
 from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
@@ -223,6 +228,7 @@ async def _run_discovery(config: Config) -> None:
     cache = Cache(config.cache_path)
     lastfm = LastFmClient(config.lastfm_api_key)
     deezer = DeezerClient(cache) if config.deezer_enabled else None
+    listenbrainz = ListenBrainzClient(cache) if config.listenbrainz_enabled else None
     discogs = (
         DiscogsEnricher(config.discogs_token, cache)
         if config.discogs_enabled and config.discogs_token
@@ -274,6 +280,7 @@ async def _run_discovery(config: Config) -> None:
             discogs,
             existing_names,
             deezer=deezer,
+            listenbrainz=listenbrainz,
             existing_artist_mbids=existing_mbids,
             ignored_names=ignore_list.names(),
             on_progress=on_progress,
@@ -284,6 +291,8 @@ async def _run_discovery(config: Config) -> None:
         await lastfm.aclose()
         if deezer is not None:
             await deezer.aclose()
+        if listenbrainz is not None:
+            await listenbrainz.aclose()
         if discogs is not None:
             await discogs.aclose()
         if lidarr is not None:
@@ -322,7 +331,7 @@ def render_page(
       <thead>
         <tr>
           <th>#</th><th>Artist</th><th>Score</th><th>Sources</th>
-          <th>Popularity</th><th>Last Release</th><th>Status</th><th>Genres</th><th>Actions</th>
+          <th>Deezer Fans</th><th>LB Listeners</th><th>Last Release</th><th>Status</th><th>Genres</th><th>Actions</th>
         </tr>
       </thead>
       <tbody>{rows}</tbody>
@@ -459,6 +468,7 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
     genres_cell = " ".join(_render_genre_tag(g) for g in all_genres) or "-"
     last_release = html.escape(candidate.discogs_latest_release_year) if candidate.discogs_latest_release_year else "-"
     popularity = f"{candidate.popularity:,}" if candidate.popularity is not None else "-"
+    lb_listeners = f"{candidate.listenbrainz_listeners:,}" if candidate.listenbrainz_listeners is not None else "-"
     name_attr = html.escape(candidate.name, quote=True)
 
     badges = []
@@ -506,6 +516,7 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
         f"<td>{candidate.similarity:.2f}</td>"
         f"<td>{html.escape(','.join(candidate.sources))}</td>"
         f"<td>{popularity}</td>"
+        f"<td>{lb_listeners}</td>"
         f"<td>{last_release}</td>"
         f"<td>{status}</td>"
         f"<td>{genres_cell}</td>"

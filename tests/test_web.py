@@ -45,6 +45,7 @@ def test_index_lists_stored_candidates(tmp_path, monkeypatch):
                 deezer_genre="Electro",
                 discogs_latest_release_year="2025",
                 popularity=46417,
+                listenbrainz_listeners=1234,
             )
         ]
     )
@@ -57,6 +58,7 @@ def test_index_lists_stored_candidates(tmp_path, monkeypatch):
     assert "Electro" in response.text
     assert "2025" in response.text
     assert "46,417" in response.text
+    assert "1,234" in response.text
     assert "Last updated:" in response.text
 
 
@@ -165,6 +167,7 @@ async def test_run_discovery_persists_candidates_and_clears_running_flag(tmp_pat
         discogs_token=None,
         discogs_enabled=False,
         deezer_enabled=False,
+        listenbrainz_enabled=False,
         lidarr_url=None,
         lidarr_api_key=None,
         lidarr_root_folder=None,
@@ -204,6 +207,7 @@ async def test_run_discovery_preserves_mid_run_ignore(tmp_path, monkeypatch):
         discogs_token=None,
         discogs_enabled=False,
         deezer_enabled=False,
+        listenbrainz_enabled=False,
         lidarr_url=None,
         lidarr_api_key=None,
         lidarr_root_folder=None,
@@ -480,6 +484,7 @@ async def test_run_discovery_flags_candidates_matching_ignored_genre(tmp_path, m
         discogs_token=None,
         discogs_enabled=False,
         deezer_enabled=False,
+        listenbrainz_enabled=False,
         lidarr_url=None,
         lidarr_api_key=None,
         lidarr_root_folder=None,

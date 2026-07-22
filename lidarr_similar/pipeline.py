@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
+from lidarr_similar.listenbrainz import ListenBrainzClient
 from lidarr_similar.models import Candidate
 from lidarr_similar.naming import normalize_name
 
@@ -32,6 +33,7 @@ async def discover_candidates(
     existing_artist_names: set[str],
     deezer: DeezerClient | None = None,
     deezer_genre_enrichment: bool = True,
+    listenbrainz: ListenBrainzClient | None = None,
     top_n_seed_artists: int = 20,
     similar_per_artist: int = 10,
     ignored_names: set[str] = frozenset(),
@@ -51,6 +53,10 @@ async def discover_candidates(
     from Lidarr's foreignArtistId - Lidarr is itself MusicBrainz-based) over name
     matching whenever Last.fm supplied a candidate's mbid, since normalized-name
     matching can still miss genuine spelling variants that aren't just punctuation/case.
+
+    listenbrainz enrichment (a second, independent popularity signal alongside
+    Deezer's fan count) needs a candidate's mbid too and is skipped for candidates
+    without one.
     """
     seed_artists = await lastfm.top_artists(username, limit=top_n_seed_artists)
 
@@ -84,6 +90,12 @@ async def discover_candidates(
         for i, candidate in enumerate(candidates):
             if not candidate.ignored:
                 candidates[i] = await deezer.enrich_genre(candidate)
+                if on_progress is not None:
+                    await on_progress(candidates)
+    if listenbrainz is not None:
+        for i, candidate in enumerate(candidates):
+            if not candidate.ignored:
+                candidates[i] = await listenbrainz.enrich_popularity(candidate)
                 if on_progress is not None:
                     await on_progress(candidates)
 

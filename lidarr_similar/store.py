@@ -27,6 +27,7 @@ class CandidateStore:
                 discogs_latest_release_year TEXT,
                 deezer_genre TEXT,
                 popularity INTEGER,
+                listenbrainz_listeners INTEGER,
                 already_in_library INTEGER NOT NULL DEFAULT 0,
                 ignored INTEGER NOT NULL DEFAULT 0,
                 ignored_genre TEXT,
@@ -44,8 +45,9 @@ class CandidateStore:
             """
             INSERT INTO candidates
                 (name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles,
-                 discogs_latest_release_year, deezer_genre, popularity, already_in_library, ignored, ignored_genre, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 discogs_latest_release_year, deezer_genre, popularity, listenbrainz_listeners,
+                 already_in_library, ignored, ignored_genre, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -59,6 +61,7 @@ class CandidateStore:
                     c.discogs_latest_release_year,
                     c.deezer_genre,
                     c.popularity,
+                    c.listenbrainz_listeners,
                     int(c.already_in_library),
                     int(c.ignored),
                     c.ignored_genre,
@@ -72,7 +75,8 @@ class CandidateStore:
     def load_all(self) -> list[Candidate]:
         rows = self._conn.execute(
             "SELECT name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles, "
-            "discogs_latest_release_year, deezer_genre, popularity, already_in_library, ignored, ignored_genre "
+            "discogs_latest_release_year, deezer_genre, popularity, listenbrainz_listeners, "
+            "already_in_library, ignored, ignored_genre "
             "FROM candidates ORDER BY similarity DESC"
         ).fetchall()
         return [
@@ -87,9 +91,10 @@ class CandidateStore:
                 discogs_latest_release_year=row[7],
                 deezer_genre=row[8],
                 popularity=row[9],
-                already_in_library=bool(row[10]),
-                ignored=bool(row[11]),
-                ignored_genre=row[12],
+                listenbrainz_listeners=row[10],
+                already_in_library=bool(row[11]),
+                ignored=bool(row[12]),
+                ignored_genre=row[13],
             )
             for row in rows
         ]

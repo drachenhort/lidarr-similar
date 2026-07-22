@@ -95,6 +95,41 @@ async def test_discover_candidates_applies_discogs_enrichment():
     discogs.enrich.assert_awaited_once()
 
 
+async def test_discover_candidates_applies_listenbrainz_enrichment():
+    lastfm = AsyncMock()
+    lastfm.top_artists.return_value = ["Seed A"]
+    lastfm.similar_artists.return_value = [Candidate(name="X", similarity=0.9)]
+
+    listenbrainz = AsyncMock()
+    listenbrainz.enrich_popularity.side_effect = lambda c: c
+
+    await discover_candidates(
+        lastfm, username="user", discogs=None, existing_artist_names=set(), listenbrainz=listenbrainz
+    )
+
+    listenbrainz.enrich_popularity.assert_awaited_once()
+
+
+async def test_discover_candidates_skips_listenbrainz_for_ignored_candidates():
+    lastfm = AsyncMock()
+    lastfm.top_artists.return_value = ["Seed A"]
+    lastfm.similar_artists.return_value = [Candidate(name="Skip Me", similarity=0.9)]
+
+    listenbrainz = AsyncMock()
+    listenbrainz.enrich_popularity.side_effect = lambda c: c
+
+    await discover_candidates(
+        lastfm,
+        username="user",
+        discogs=None,
+        existing_artist_names=set(),
+        listenbrainz=listenbrainz,
+        ignored_names={"Skip Me"},
+    )
+
+    listenbrainz.enrich_popularity.assert_not_awaited()
+
+
 async def test_discover_candidates_flags_ignored_names_and_skips_their_enrichment():
     lastfm = AsyncMock()
     lastfm.top_artists.return_value = ["Seed A"]

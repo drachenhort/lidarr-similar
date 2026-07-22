@@ -13,6 +13,7 @@ class Config:
     discogs_token: str | None
     discogs_enabled: bool
     deezer_enabled: bool
+    listenbrainz_enabled: bool
     lidarr_url: str | None
     lidarr_api_key: str | None
     lidarr_root_folder: str | None
@@ -29,6 +30,7 @@ class Config:
             discogs_token=os.environ.get("DISCOGS_TOKEN"),
             discogs_enabled=os.environ.get("DISCOGS_ENABLED", "true").lower() == "true",
             deezer_enabled=os.environ.get("DEEZER_ENABLED", "true").lower() == "true",
+            listenbrainz_enabled=os.environ.get("LISTENBRAINZ_ENABLED", "true").lower() == "true",
             lidarr_url=os.environ.get("LIDARR_URL"),
             lidarr_api_key=os.environ.get("LIDARR_API_KEY"),
             lidarr_root_folder=os.environ.get("LIDARR_ROOT_FOLDER"),

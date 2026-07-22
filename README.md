@@ -4,7 +4,8 @@ Discovers artists similar to your Last.fm listening history and adds them to Lid
 
 Candidates are gathered from Last.fm's `artist.getSimilar` and Deezer's related-artist
 data (artists found by both sources are boosted), then optionally enriched with Discogs
-genre/style metadata and a Deezer-fan-count popularity score before being handed to Lidarr.
+genre/style metadata and two independent popularity signals - Deezer fan count and
+ListenBrainz distinct-listener count - before being handed to Lidarr.
 
 See [CHANGELOG.md](CHANGELOG.md) for what's been built so far.
 
@@ -38,6 +39,7 @@ pip install -r requirements-dev.txt   # includes runtime deps + pytest, respx
 | `DISCOGS_TOKEN` | no | — | Discogs personal access token; enrichment is skipped if unset |
 | `DISCOGS_ENABLED` | no | `true` | Set to `false` to disable Discogs enrichment |
 | `DEEZER_ENABLED` | no | `true` | Set to `false` to disable the Deezer similarity source |
+| `LISTENBRAINZ_ENABLED` | no | `true` | Set to `false` to disable ListenBrainz popularity enrichment |
 | `CACHE_PATH` | no | `lidarr_similar.sqlite3` | Path to the local SQLite cache used for enrichment lookups |
 | `STORE_PATH` | no | `lidarr_similar_store.sqlite3` | Path to the SQLite store the web UI persists discovery results and the ignore list in |
 | `LIDARR_ROOT_FOLDER` | for the web UI's "Add to Lidarr" button | — | Root folder path Lidarr should use for newly added artists, e.g. `/music` |
@@ -89,6 +91,7 @@ Options:
 python -m lidarr_similar.preview --limit 10          # show fewer results
 python -m lidarr_similar.preview --no-deezer          # Last.fm only
 python -m lidarr_similar.preview --no-discogs          # skip genre enrichment
+python -m lidarr_similar.preview --no-listenbrainz     # skip ListenBrainz popularity enrichment
 python -m lidarr_similar.preview --no-lidarr           # ignore Lidarr even if configured
 python -m lidarr_similar.preview --help                # full option list
 ```

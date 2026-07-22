@@ -14,6 +14,7 @@ def test_parse_args_defaults():
     assert args.similar_per_artist == 10
     assert args.no_deezer is False
     assert args.no_discogs is False
+    assert args.no_listenbrainz is False
     assert args.no_lidarr is False
 
 
@@ -60,6 +61,7 @@ def test_print_table_lists_candidates_with_sources_and_genres(capsys):
             discogs_genres=["Electronic"],
             discogs_latest_release_year="2022",
             popularity=12345,
+            listenbrainz_listeners=6789,
         ),
         Candidate(name="Aphex Twin", similarity=0.8, sources=["deezer"], already_in_library=True),
     ]
@@ -72,6 +74,7 @@ def test_print_table_lists_candidates_with_sources_and_genres(capsys):
     assert "Electronic" in output
     assert "2022" in output
     assert "12,345" in output
+    assert "6,789" in output
     assert "Aphex Twin" in output
     assert "2 candidate(s) shown." in output
     assert "Note:" not in output
