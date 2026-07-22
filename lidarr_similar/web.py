@@ -46,7 +46,7 @@ from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from lidarr_similar.cache import Cache
-from lidarr_similar.config import Config
+from lidarr_similar.config import Config, ConfigItem, describe_config
 from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
@@ -59,6 +59,38 @@ from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
 app = FastAPI(title="lidarr-similar")
 
 PAGE_SIZE = 50
+
+_BASE_STYLE = """
+    body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; }
+    th { background: #f5f5f5; }
+    form { display: inline; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .in-library { color: #888; }
+    .ignored-row { color: #aaa; }
+    .badge { background: #eef; color: #33a; border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.85em; }
+    .badge-ignored { background: #f5eef0; color: #a33; }
+    .banner { padding: 0.5rem 0.75rem; border-radius: 4px; }
+    .banner.error { background: #fdecea; color: #b00020; }
+    .banner.ok { background: #eaf7ea; color: #1a7a1a; }
+    .hint { color: #888; font-size: 0.9em; }
+    .actions button { font-size: 0.85em; margin-right: 0.3rem; }
+    .pagination { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }
+    .pagination a.disabled { pointer-events: none; color: #bbb; }
+    .ignore-list { margin-bottom: 1.5rem; border: 1px solid #eee; border-radius: 4px; padding: 0.6rem 0.8rem; }
+    .ignore-list summary { cursor: pointer; font-weight: 600; }
+    .ignore-list ul { list-style: none; padding: 0; margin: 0.6rem 0 0; }
+    .ignore-list li { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; }
+    .genre-tag { display: inline-block; }
+    .genre-ignore-btn { border: none; background: none; color: #b00020; cursor: pointer; font-size: 0.85em; padding: 0 0.2rem; }
+    .genre-form input { padding: 0.2rem 0.4rem; }
+    .nav { margin-bottom: 1rem; }
+    .nav a { color: #33a; text-decoration: none; font-size: 0.9em; }
+    .status-ok { color: #1a7a1a; font-weight: bold; }
+    .status-missing { color: #888; }
+    .status-invalid { color: #b00020; font-weight: bold; }
+"""
 
 
 @dataclass
@@ -113,6 +145,11 @@ async def index(min_score: float = 0.0, page: int = 1, message: str | None = Non
         ignored_names,
         ignored_genres,
     )
+
+
+@app.get("/config", response_class=HTMLResponse)
+async def config_status() -> str:
+    return render_config_page(describe_config())
 
 
 @app.post("/refresh")
@@ -364,35 +401,11 @@ def render_page(
   <meta charset="utf-8">
   {auto_refresh}
   <title>lidarr-similar</title>
-  <style>
-    body {{ font-family: system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }}
-    table {{ width: 100%; border-collapse: collapse; }}
-    th, td {{ text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; }}
-    th {{ background: #f5f5f5; }}
-    form {{ display: inline; }}
-    .toolbar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }}
-    .in-library {{ color: #888; }}
-    .ignored-row {{ color: #aaa; }}
-    .badge {{ background: #eef; color: #33a; border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.85em; }}
-    .badge-ignored {{ background: #f5eef0; color: #a33; }}
-    .banner {{ padding: 0.5rem 0.75rem; border-radius: 4px; }}
-    .banner.error {{ background: #fdecea; color: #b00020; }}
-    .banner.ok {{ background: #eaf7ea; color: #1a7a1a; }}
-    .hint {{ color: #888; font-size: 0.9em; }}
-    .actions button {{ font-size: 0.85em; margin-right: 0.3rem; }}
-    .pagination {{ margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }}
-    .pagination a.disabled {{ pointer-events: none; color: #bbb; }}
-    .ignore-list {{ margin-bottom: 1.5rem; border: 1px solid #eee; border-radius: 4px; padding: 0.6rem 0.8rem; }}
-    .ignore-list summary {{ cursor: pointer; font-weight: 600; }}
-    .ignore-list ul {{ list-style: none; padding: 0; margin: 0.6rem 0 0; }}
-    .ignore-list li {{ display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; }}
-    .genre-tag {{ display: inline-block; }}
-    .genre-ignore-btn {{ border: none; background: none; color: #b00020; cursor: pointer; font-size: 0.85em; padding: 0 0.2rem; }}
-    .genre-form input {{ padding: 0.2rem 0.4rem; }}
-  </style>
+  <style>{_BASE_STYLE}</style>
 </head>
 <body>
   <h1>lidarr-similar</h1>
+  <div class="nav"><a href="/config">⚙ Configuration status</a></div>
   {_render_ignore_list(ignored_names)}
   {_render_genre_ignore_list(ignored_genres)}
   {error_banner}
@@ -408,6 +421,56 @@ def render_page(
   {body}
 </body>
 </html>"""
+
+
+def render_config_page(items: list[ConfigItem]) -> str:
+    rows = "".join(_render_config_row(item) for item in items)
+    all_required_present = all(item.present for item in items if item.required_for == "core discovery pipeline")
+    summary = (
+        '<p class="banner ok">Core discovery pipeline is configured (Last.fm credentials present).</p>'
+        if all_required_present
+        else '<p class="banner error">Core discovery pipeline is missing required configuration - '
+        "discovery runs will fail until LASTFM_API_KEY and LASTFM_USERNAME are set.</p>"
+    )
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lidarr-similar - Configuration</title>
+  <style>{_BASE_STYLE}</style>
+</head>
+<body>
+  <h1>Configuration status</h1>
+  <div class="nav"><a href="/">&larr; Back to results</a></div>
+  {summary}
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Status</th><th>Used for</th><th>Value</th></tr>
+    </thead>
+    <tbody>{rows}</tbody>
+  </table>
+  <p class="hint">Secret values (API keys, tokens) are never shown here, only whether they're set.</p>
+</body>
+</html>"""
+
+
+def _render_config_row(item: ConfigItem) -> str:
+    if not item.present:
+        status = '<span class="status-missing">not set</span>'
+    elif not item.valid:
+        status = '<span class="status-invalid">set, but invalid</span>'
+    else:
+        status = '<span class="status-ok">&#10003; set</span>'
+    value_cell = html.escape(item.value_preview) if item.value_preview else ("-" if item.present else "-")
+    note_html = f"<br><span class=\"hint\">{html.escape(item.note)}</span>" if item.note else ""
+    return (
+        "<tr>"
+        f"<td><code>{html.escape(item.name)}</code></td>"
+        f"<td>{status}{note_html}</td>"
+        f"<td>{html.escape(item.required_for)}</td>"
+        f"<td>{value_cell}</td>"
+        "</tr>"
+    )
 
 
 def _render_ignore_list(ignored_names: list[str]) -> str:

@@ -105,9 +105,16 @@ Unraid), use the web UI instead of the CLIs:
 uvicorn lidarr_similar.web:app --host 0.0.0.0 --port 8000
 ```
 
-Open `http://localhost:8000`. It shows the most recent discovery results (persisted in
-`STORE_PATH` so they survive restarts) and has a "Run discovery now" button. A full run
-can take a few minutes — Discogs enrichment alone is rate-limited to 60 requests/min and
+Open `http://localhost:8000`. A "⚙ Configuration status" link at the top goes to
+`/config`, which shows every environment variable the app reads — whether it's set,
+whether it's valid (e.g. flags `LIDARR_QUALITY_PROFILE_ID` if it's not numeric), and what
+feature it's needed for. Secret values (API keys, tokens) are never shown, only their
+presence/validity — handy for checking a `.env` or container setup actually took effect
+without needing to check logs or trigger a run first.
+
+The index page itself shows the most recent discovery results (persisted in `STORE_PATH`
+so they survive restarts) and has a "Run discovery now" button. A full run can take a
+few minutes — Discogs enrichment alone is rate-limited to 60 requests/min and
 makes about two calls per candidate — so refresh runs in the background, and results fill
 in as they're found rather than only appearing once the whole run finishes (the page
 polls itself every 5s while a run is in progress and shows an "N/M enriched" counter).

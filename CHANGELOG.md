@@ -4,6 +4,9 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+### Added
+- Configuration status page (`/config`, linked from the index page) showing every environment variable the app reads, whether it's set, whether it's valid where checkable (e.g. flags a non-numeric `LIDARR_QUALITY_PROFILE_ID`), and which feature it's needed for - without ever displaying secret values (API keys/tokens), only presence/validity. New `config.describe_config()`/`ConfigItem` in `config.py`. Verified live against a real `.env`: correctly showed the core pipeline as configured and flagged the known-bad `LIDARR_QUALITY_PROFILE_ID=Standard` value with the same explanation as the earlier crash-fix.
+
 ### Fixed
 - Ignoring an artist looked like it silently failed: it was actually persisted correctly (verified in the store), but the "Ignored artists" panel didn't render at all when empty (nothing to click before you knew it existed) and stayed collapsed by default even once populated - meanwhile the ignored artist itself vanished from view, pushed to the bottom of a different results page. Found live via user report. Both panels now always render (with a "None yet." placeholder when empty) and auto-expand via the `open` attribute as soon as they have entries.
 

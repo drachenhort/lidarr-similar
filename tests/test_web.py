@@ -532,3 +532,60 @@ async def test_run_discovery_flags_candidates_matching_ignored_genre(tmp_path, m
     assert result["Rapper"].ignored_genre == "Rap"
     assert result["Rocker"].ignored is False
     store.close()
+
+
+def test_config_page_shows_missing_required_vars(monkeypatch):
+    for var in ("LASTFM_API_KEY", "LASTFM_USERNAME"):
+        monkeypatch.delenv(var, raising=False)
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    assert "LASTFM_API_KEY" in response.text
+    assert "not set" in response.text
+    assert "missing required configuration" in response.text
+
+
+def test_config_page_shows_present_vars_as_set(monkeypatch):
+    monkeypatch.setenv("LASTFM_API_KEY", "key")
+    monkeypatch.setenv("LASTFM_USERNAME", "user")
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    assert "is configured" in response.text
+
+
+def test_config_page_flags_invalid_quality_profile_id(monkeypatch):
+    monkeypatch.setenv("LASTFM_API_KEY", "key")
+    monkeypatch.setenv("LASTFM_USERNAME", "user")
+    monkeypatch.setenv("LIDARR_QUALITY_PROFILE_ID", "Standard")
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    assert "set, but invalid" in response.text
+    assert "numeric ID" in response.text
+
+
+def test_config_page_never_leaks_secret_values(monkeypatch):
+    monkeypatch.setenv("LASTFM_API_KEY", "super-secret-key")
+    monkeypatch.setenv("LASTFM_USERNAME", "user")
+    monkeypatch.setenv("DISCOGS_TOKEN", "another-secret")
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    assert "super-secret-key" not in response.text
+    assert "another-secret" not in response.text
+
+
+def test_index_links_to_config_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORE_PATH", str(tmp_path / "store.sqlite3"))
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert 'href="/config"' in response.text
