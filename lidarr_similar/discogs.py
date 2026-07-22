@@ -33,10 +33,12 @@ class DiscogsEnricher:
 
         try:
             artist_id = await self._find_artist_id(candidate.name)
-            if artist_id is None:
-                return candidate
-            metadata = await self._fetch_artist(artist_id)
+            metadata = await self._fetch_genre_style(candidate.name)
+            metadata["discogs_id"] = artist_id
         except httpx.HTTPError:
+            return candidate
+
+        if artist_id is None and not metadata["discogs_genres"]:
             return candidate
 
         self._cache.set(CACHE_SOURCE, candidate.name, metadata)
@@ -54,16 +56,20 @@ class DiscogsEnricher:
         exact = next((r for r in results if r.get("title", "").lower() == name.lower()), None)
         return (exact or results[0])["id"]
 
-    async def _fetch_artist(self, artist_id: int) -> dict:
+    async def _fetch_genre_style(self, artist_name: str) -> dict:
+        """Discogs artist objects carry no genre/style; those only exist on releases,
+        so look up the artist's releases and take the genre/style of the first match."""
         response = await self._http.get(
-            f"/artists/{artist_id}", params={"token": self._token}
+            "/database/search",
+            params={"artist": artist_name, "type": "release", "token": self._token},
         )
         response.raise_for_status()
-        artist = response.json()
+        results = response.json().get("results", [])
+        if not results:
+            return {"discogs_genres": [], "discogs_styles": []}
         return {
-            "discogs_id": artist_id,
-            "discogs_genres": artist.get("genres", []),
-            "discogs_styles": artist.get("styles", []),
+            "discogs_genres": results[0].get("genre", []),
+            "discogs_styles": results[0].get("style", []),
         }
 
     async def aclose(self) -> None:
