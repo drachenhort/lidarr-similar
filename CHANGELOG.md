@@ -4,12 +4,20 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+## v0.2.0 - 2026-07-22
+
 ### Changed
 - Redesigned `/config` from a single flat table of every variable into a "patch bay" of grouped modules (Last.fm, Lidarr, Enrichment, Storage), each a bordered panel with its own header LED summarizing that module's state (green/amber/red/dim) and per-row LEDs next to each variable, echoing the results page's own instrument-panel visual language instead of a generic settings table. "Test Lidarr connection" now lives inside the Lidarr module itself rather than at the page bottom.
+- Normalized the "Last updated" timestamp on the results page to a readable `YYYY-MM-DD HH:MM UTC` instead of the raw ISO8601 string (with microseconds) SQLite stored it as.
+- `docker-compose.yml` and the README now point at the published `ghcr.io/drachenhort/lidarr-similar:latest` image by default, with building from source (`build: .`) documented as a fallback.
 
 ### Added
+- Sort-by dropdown on the results page: Similarity score (default), Deezer fans, LB listeners, or Not in library - the last one surfaces candidates worth adding without scrolling past everything already in the Lidarr library.
+- App version badge next to the wordmark in the header, sourced from `lidarr_similar.__version__`.
 - "Test Lidarr connection" button on `/config`, next to "Save configuration" - calls Lidarr's `/api/v1/system/status` and reports success (with the reported Lidarr version) or the specific failure reason, using whatever's currently in the LIDARR_URL/LIDARR_API_KEY fields (not necessarily saved yet, via `formaction`), falling back to the saved/env API key when that field is left blank. New `LidarrClient.system_status()` and `POST /config/test-lidarr`. Verified live against a real Lidarr instance.
 - "Edit & test" overlay for LIDARR_API_KEY on `/config`: opens a modal dialog with a single password field that tests itself against the current LIDARR_URL as you type (debounced, via a new JSON endpoint `POST /config/test-lidarr-key`), showing live success (with the connected Lidarr version) or failure feedback instead of requiring a full save-then-check round trip. "Save key" stays disabled until a test succeeds, then submits the existing save form. Verified live against a real Lidarr instance with both a valid and a deliberately wrong key.
+- Published Docker image at `ghcr.io/drachenhort/lidarr-similar` (public, no login required to pull), plus a GitHub Actions workflow (`.github/workflows/docker-publish.yml`) that builds and pushes it automatically on every push to `master` and on version tags - no more manual `docker build`/`docker push` from a local machine.
+- Unraid Community Applications container template (`unraid-template.xml`) declaring the image, WebUI port, `/data` path, and all env vars with descriptions/required-vs-advanced grouping, usable directly as a CA template repository or pasted into "Add Container"'s template field. Includes a generated icon (`icon.png`) matching the web UI's dark amber/teal theme.
 
 ## v0.1.0 - 2026-07-22
 
