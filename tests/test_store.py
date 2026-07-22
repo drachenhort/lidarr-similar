@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from lidarr_similar.models import Candidate
-from lidarr_similar.store import CandidateStore, IgnoreList
+from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
 
 
 def test_store_starts_empty(tmp_path):
@@ -113,3 +113,42 @@ def test_ignore_list_remove(tmp_path):
 
     assert ignore_list.is_ignored("Boards of Canada") is False
     assert ignore_list.names() == set()
+
+
+def test_ignore_list_list_ordered_most_recent_first(tmp_path):
+    ignore_list = IgnoreList(tmp_path / "ignore.sqlite3")
+
+    ignore_list.add("First Ignored")
+    ignore_list.add("Second Ignored")
+    ignore_list.add("Third Ignored")
+
+    assert ignore_list.list_ordered() == ["Third Ignored", "Second Ignored", "First Ignored"]
+
+
+def test_genre_ignore_list_matching_is_case_insensitive_substring(tmp_path):
+    genre_ignore_list = GenreIgnoreList(tmp_path / "ignore.sqlite3")
+    genre_ignore_list.add("Rap")
+
+    assert genre_ignore_list.matching_genre(["Rock"]) is None
+    assert genre_ignore_list.matching_genre(["Rap/Hip Hop"]) == "Rap"
+    assert genre_ignore_list.matching_genre(["RAP"]) == "Rap"
+    assert genre_ignore_list.matching_genre(["Rock", "Gangsta Rap"]) == "Rap"
+
+
+def test_genre_ignore_list_remove(tmp_path):
+    genre_ignore_list = GenreIgnoreList(tmp_path / "ignore.sqlite3")
+    genre_ignore_list.add("Rap")
+
+    genre_ignore_list.remove("rap")
+
+    assert genre_ignore_list.matching_genre(["Rap"]) is None
+    assert genre_ignore_list.list_ordered() == []
+
+
+def test_genre_ignore_list_ordered_most_recent_first(tmp_path):
+    genre_ignore_list = GenreIgnoreList(tmp_path / "ignore.sqlite3")
+
+    genre_ignore_list.add("Rap")
+    genre_ignore_list.add("Country")
+
+    assert genre_ignore_list.list_ordered() == ["Country", "Rap"]

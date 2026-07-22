@@ -28,6 +28,7 @@ class CandidateStore:
                 deezer_genre TEXT,
                 already_in_library INTEGER NOT NULL DEFAULT 0,
                 ignored INTEGER NOT NULL DEFAULT 0,
+                ignored_genre TEXT,
                 updated_at TEXT NOT NULL
             )
             """
@@ -42,8 +43,8 @@ class CandidateStore:
             """
             INSERT INTO candidates
                 (name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles,
-                 discogs_latest_release_year, deezer_genre, already_in_library, ignored, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 discogs_latest_release_year, deezer_genre, already_in_library, ignored, ignored_genre, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -58,6 +59,7 @@ class CandidateStore:
                     c.deezer_genre,
                     int(c.already_in_library),
                     int(c.ignored),
+                    c.ignored_genre,
                     now,
                 )
                 for c in candidates
@@ -68,7 +70,7 @@ class CandidateStore:
     def load_all(self) -> list[Candidate]:
         rows = self._conn.execute(
             "SELECT name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles, "
-            "discogs_latest_release_year, deezer_genre, already_in_library, ignored "
+            "discogs_latest_release_year, deezer_genre, already_in_library, ignored, ignored_genre "
             "FROM candidates ORDER BY similarity DESC"
         ).fetchall()
         return [
@@ -84,6 +86,7 @@ class CandidateStore:
                 deezer_genre=row[8],
                 already_in_library=bool(row[9]),
                 ignored=bool(row[10]),
+                ignored_genre=row[11],
             )
             for row in rows
         ]
@@ -97,15 +100,71 @@ class CandidateStore:
         self._conn.execute("UPDATE candidates SET already_in_library = 1 WHERE name = ?", (name,))
         self._conn.commit()
 
-    def mark_ignored(self, name: str, ignored: bool = True) -> None:
+    def mark_ignored(self, name: str, ignored: bool = True, ignored_genre: str | None = None) -> None:
         """Flag (or unflag) a single candidate as ignored, without a full replace_all()."""
-        self._conn.execute("UPDATE candidates SET ignored = ? WHERE name = ?", (int(ignored), name))
+        self._conn.execute(
+            "UPDATE candidates SET ignored = ?, ignored_genre = ? WHERE name = ?",
+            (int(ignored), ignored_genre, name),
+        )
         self._conn.commit()
 
     def remove(self, name: str) -> None:
         """Drop a single candidate entirely."""
         self._conn.execute("DELETE FROM candidates WHERE name = ?", (name,))
         self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+class GenreIgnoreList:
+    """Genres the user never wants suggested (e.g. "Rap"), persisted across restarts and runs.
+
+    Matching is a case-insensitive substring check against a candidate's combined
+    genre/style strings (Discogs genres+styles, Deezer genre) - genres only become
+    known after enrichment, and different sources use different granularity (Discogs
+    "Hip Hop" vs Deezer "Rap/Hip Hop"), so exact matching would miss most real cases.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self._conn = sqlite3.connect(path)
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ignored_genres (
+                normalized_genre TEXT PRIMARY KEY,
+                genre TEXT NOT NULL,
+                ignored_at TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.commit()
+
+    def add(self, genre: str) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO ignored_genres (normalized_genre, genre, ignored_at) VALUES (?, ?, ?)",
+            (genre.casefold().strip(), genre, datetime.now(timezone.utc).isoformat()),
+        )
+        self._conn.commit()
+
+    def remove(self, genre: str) -> None:
+        self._conn.execute("DELETE FROM ignored_genres WHERE normalized_genre = ?", (genre.casefold().strip(),))
+        self._conn.commit()
+
+    def list_ordered(self) -> list[str]:
+        """Display names, most recently ignored first - for showing the full list in the UI."""
+        rows = self._conn.execute("SELECT genre FROM ignored_genres ORDER BY ignored_at DESC").fetchall()
+        return [row[0] for row in rows]
+
+    def matching_genre(self, candidate_genres: list[str]) -> str | None:
+        """The first ignored genre (in its original display casing) found as a substring
+        of any of candidate_genres, or None."""
+        ignored = self._conn.execute("SELECT normalized_genre, genre FROM ignored_genres").fetchall()
+        for genre in candidate_genres:
+            normalized = genre.casefold()
+            for normalized_ignored, display_ignored in ignored:
+                if normalized_ignored in normalized:
+                    return display_ignored
+        return None
 
     def close(self) -> None:
         self._conn.close()
@@ -142,6 +201,11 @@ class IgnoreList:
         """Original (non-normalized) display names, for feeding back into discover_candidates()."""
         rows = self._conn.execute("SELECT name FROM ignored_artists").fetchall()
         return {row[0] for row in rows}
+
+    def list_ordered(self) -> list[str]:
+        """Display names, most recently ignored first - for showing the full ignore list in the UI."""
+        rows = self._conn.execute("SELECT name FROM ignored_artists ORDER BY ignored_at DESC").fetchall()
+        return [row[0] for row in rows]
 
     def names_normalized(self) -> set[str]:
         """Normalized names, for cheap membership checks when filtering a candidate list."""

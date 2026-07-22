@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from lidarr_similar import web
 from lidarr_similar.config import Config
 from lidarr_similar.models import Candidate
-from lidarr_similar.store import CandidateStore, IgnoreList
+from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
 from lidarr_similar.web import app
 
 
@@ -381,4 +381,119 @@ def test_add_endpoint_marks_candidate_in_library_on_success(tmp_path, monkeypatc
     store = CandidateStore(store_path)
     candidate = next(c for c in store.load_all() if c.name == "New Band")
     assert candidate.already_in_library is True
+    store.close()
+
+
+def test_index_shows_ignored_genres_section(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    genre_ignore_list = GenreIgnoreList(store_path)
+    genre_ignore_list.add("Rap")
+    genre_ignore_list.close()
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert "Ignored genres (1)" in response.text
+    assert "Rap" in response.text
+
+
+def test_ignore_genre_endpoint_bans_genre_and_flags_matching_candidates(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all(
+        [
+            Candidate(name="Rapper Artist", similarity=0.9, sources=["lastfm"], deezer_genre="Rap/Hip Hop"),
+            Candidate(name="Rock Artist", similarity=0.8, sources=["lastfm"], discogs_genres=["Rock"]),
+        ]
+    )
+    store.close()
+
+    client = TestClient(app)
+    response = client.post("/ignore-genre", data={"genre": "Rap"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+
+    genre_ignore_list = GenreIgnoreList(store_path)
+    assert genre_ignore_list.matching_genre(["Rap/Hip Hop"]) == "Rap"
+    genre_ignore_list.close()
+
+    store = CandidateStore(store_path)
+    candidates = {c.name: c for c in store.load_all()}
+    assert candidates["Rapper Artist"].ignored is True
+    assert candidates["Rapper Artist"].ignored_genre == "Rap"
+    assert candidates["Rock Artist"].ignored is False
+    store.close()
+
+
+def test_unignore_genre_endpoint_restores_matching_candidates(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all(
+        [Candidate(name="Rapper Artist", similarity=0.9, sources=["lastfm"], deezer_genre="Rap/Hip Hop")]
+    )
+    store.close()
+    genre_ignore_list = GenreIgnoreList(store_path)
+    genre_ignore_list.add("Rap")
+    genre_ignore_list.close()
+    store = CandidateStore(store_path)
+    store.mark_ignored("Rapper Artist", ignored=True, ignored_genre="Rap")
+    store.close()
+
+    client = TestClient(app)
+    response = client.post("/unignore-genre", data={"genre": "Rap"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+
+    genre_ignore_list = GenreIgnoreList(store_path)
+    assert genre_ignore_list.matching_genre(["Rap/Hip Hop"]) is None
+    genre_ignore_list.close()
+
+    store = CandidateStore(store_path)
+    candidate = next(c for c in store.load_all() if c.name == "Rapper Artist")
+    assert candidate.ignored is False
+    assert candidate.ignored_genre is None
+    store.close()
+
+
+async def test_run_discovery_flags_candidates_matching_ignored_genre(tmp_path, monkeypatch):
+    candidates = [
+        Candidate(name="Rapper", similarity=0.9, sources=["lastfm"], deezer_genre="Rap/Hip Hop"),
+        Candidate(name="Rocker", similarity=0.8, sources=["lastfm"], discogs_genres=["Rock"]),
+    ]
+
+    async def fake_discover_candidates(*args, on_progress=None, **kwargs):
+        if on_progress is not None:
+            await on_progress(candidates)
+        return candidates
+
+    monkeypatch.setattr(web, "discover_candidates", fake_discover_candidates)
+    config = Config(
+        lastfm_api_key="key",
+        lastfm_username="user",
+        discogs_token=None,
+        discogs_enabled=False,
+        deezer_enabled=False,
+        lidarr_url=None,
+        lidarr_api_key=None,
+        lidarr_root_folder=None,
+        lidarr_quality_profile_id=None,
+        cache_path=str(tmp_path / "cache.sqlite3"),
+        store_path=str(tmp_path / "store.sqlite3"),
+    )
+    genre_ignore_list = GenreIgnoreList(config.store_path)
+    genre_ignore_list.add("Rap")
+    genre_ignore_list.close()
+
+    await web._run_discovery(config)
+
+    store = CandidateStore(config.store_path)
+    result = {c.name: c for c in store.load_all()}
+    assert result["Rapper"].ignored is True
+    assert result["Rapper"].ignored_genre == "Rap"
+    assert result["Rocker"].ignored is False
     store.close()

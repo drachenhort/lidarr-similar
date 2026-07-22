@@ -21,3 +21,4 @@ class Candidate:
     deezer_genre: str | None = None
     already_in_library: bool = False
     ignored: bool = False
+    ignored_genre: str | None = None

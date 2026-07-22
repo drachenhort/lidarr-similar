@@ -20,6 +20,14 @@ future discovery runs). Ignored artists stay visible rather than vanishing -
 they're tagged "ignored" and pushed to the bottom of the list, with an
 "Unignore" button, so a previously-ignored artist that resurfaces in a new
 run is called out instead of silently disappearing.
+
+Whole genres can be banned too (GenreIgnoreList): each genre tag in a row
+has an inline "x" to ban it with one click, and a manual "ignore a genre"
+form covers genres not yet visible. Matching is a case-insensitive substring
+check, since genres only become known after enrichment and different
+sources use different granularity (e.g. Discogs "Hip Hop" vs Deezer
+"Rap/Hip Hop"). Genre-banned candidates are tagged like artist-ignores but
+have no per-row Unignore, since undoing them means un-banning the genre.
 """
 
 from __future__ import annotations
@@ -41,7 +49,7 @@ from lidarr_similar.lastfm import LastFmClient
 from lidarr_similar.lidarr import LidarrClient
 from lidarr_similar.models import Candidate
 from lidarr_similar.pipeline import discover_candidates
-from lidarr_similar.store import CandidateStore, IgnoreList
+from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList
 
 app = FastAPI(title="lidarr-similar")
 
@@ -73,10 +81,33 @@ async def index(min_score: float = 0.0, page: int = 1, message: str | None = Non
     finally:
         store.close()
 
+    ignore_list = IgnoreList(_store_path())
+    try:
+        ignored_names = ignore_list.list_ordered()
+    finally:
+        ignore_list.close()
+
+    genre_ignore_list = GenreIgnoreList(_store_path())
+    try:
+        ignored_genres = genre_ignore_list.list_ordered()
+    finally:
+        genre_ignore_list.close()
+
     lidarr_add_enabled = all(
         os.environ.get(var) for var in ("LIDARR_URL", "LIDARR_API_KEY", "LIDARR_ROOT_FOLDER", "LIDARR_QUALITY_PROFILE_ID")
     )
-    return render_page(candidates, last_updated, min_score, page, _status, lidarr_add_enabled, message, error)
+    return render_page(
+        candidates,
+        last_updated,
+        min_score,
+        page,
+        _status,
+        lidarr_add_enabled,
+        message,
+        error,
+        ignored_names,
+        ignored_genres,
+    )
 
 
 @app.post("/refresh")
@@ -122,6 +153,39 @@ async def unignore(name: str = Form(...)) -> RedirectResponse:
         ignore_list.close()
         store.close()
     return RedirectResponse(f"/?{urlencode({'message': f'Unignored {name}.'})}", status_code=303)
+
+
+@app.post("/ignore-genre")
+async def ignore_genre(genre: str = Form(...)) -> RedirectResponse:
+    genre_ignore_list = GenreIgnoreList(_store_path())
+    store = CandidateStore(_store_path())
+    try:
+        genre_ignore_list.add(genre)
+        for candidate in store.load_all():
+            combined = candidate.discogs_genres + candidate.discogs_styles
+            if candidate.deezer_genre:
+                combined.append(candidate.deezer_genre)
+            if any(genre.casefold() in g.casefold() for g in combined):
+                store.mark_ignored(candidate.name, ignored=True, ignored_genre=genre)
+    finally:
+        genre_ignore_list.close()
+        store.close()
+    return RedirectResponse(f"/?{urlencode({'message': f'Ignoring genre {genre}.'})}", status_code=303)
+
+
+@app.post("/unignore-genre")
+async def unignore_genre(genre: str = Form(...)) -> RedirectResponse:
+    genre_ignore_list = GenreIgnoreList(_store_path())
+    store = CandidateStore(_store_path())
+    try:
+        genre_ignore_list.remove(genre)
+        for candidate in store.load_all():
+            if candidate.ignored_genre and candidate.ignored_genre.casefold() == genre.casefold():
+                store.mark_ignored(candidate.name, ignored=False, ignored_genre=None)
+    finally:
+        genre_ignore_list.close()
+        store.close()
+    return RedirectResponse(f"/?{urlencode({'message': f'Unignored genre {genre}.'})}", status_code=303)
 
 
 @app.post("/add")
@@ -170,20 +234,34 @@ async def _run_discovery(config: Config) -> None:
         else None
     )
     ignore_list = IgnoreList(config.store_path)
+    genre_ignore_list = GenreIgnoreList(config.store_path)
     store = CandidateStore(config.store_path)
 
     async def on_progress(candidates: list[Candidate]) -> None:
         _status.total = len(candidates)
         _status.enriched = sum(1 for c in candidates if c.discogs_id is not None or c.deezer_genre is not None)
-        # Preserve already_in_library/ignored flags set via /add or /ignore while this run was
-        # in progress - the pipeline computed both from a snapshot taken before the run started,
-        # so without this a manual action mid-run gets silently reverted by the next snapshot.
-        previous_flags = {c.name: (c.already_in_library, c.ignored) for c in store.load_all()}
+
+        for candidate in candidates:
+            if not candidate.ignored:
+                combined_genres = candidate.discogs_genres + candidate.discogs_styles
+                if candidate.deezer_genre:
+                    combined_genres.append(candidate.deezer_genre)
+                matched = genre_ignore_list.matching_genre(combined_genres)
+                if matched is not None:
+                    candidate.ignored = True
+                    candidate.ignored_genre = matched
+
+        # Preserve already_in_library/ignored flags set via /add, /ignore, or /ignore-genre while
+        # this run was in progress - the pipeline computed already_in_library/ignored from a
+        # snapshot taken before the run started, so without this a manual action mid-run gets
+        # silently reverted by the next snapshot.
+        previous_flags = {c.name: (c.already_in_library, c.ignored, c.ignored_genre) for c in store.load_all()}
         for candidate in candidates:
             prev = previous_flags.get(candidate.name)
             if prev is not None:
                 candidate.already_in_library = candidate.already_in_library or prev[0]
                 candidate.ignored = candidate.ignored or prev[1]
+                candidate.ignored_genre = candidate.ignored_genre or prev[2]
         store.replace_all(candidates)
 
     try:
@@ -209,6 +287,7 @@ async def _run_discovery(config: Config) -> None:
             await lidarr.aclose()
         cache.close()
         ignore_list.close()
+        genre_ignore_list.close()
         store.close()
         _status.running = False
 
@@ -222,6 +301,8 @@ def render_page(
     lidarr_add_enabled: bool,
     message: str | None,
     error: str | None,
+    ignored_names: list[str] = (),
+    ignored_genres: list[str] = (),
 ) -> str:
     total = len(candidates)
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -289,10 +370,19 @@ def render_page(
     .actions button {{ font-size: 0.85em; margin-right: 0.3rem; }}
     .pagination {{ margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }}
     .pagination a.disabled {{ pointer-events: none; color: #bbb; }}
+    .ignore-list {{ margin-bottom: 1.5rem; border: 1px solid #eee; border-radius: 4px; padding: 0.6rem 0.8rem; }}
+    .ignore-list summary {{ cursor: pointer; font-weight: 600; }}
+    .ignore-list ul {{ list-style: none; padding: 0; margin: 0.6rem 0 0; }}
+    .ignore-list li {{ display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; }}
+    .genre-tag {{ display: inline-block; }}
+    .genre-ignore-btn {{ border: none; background: none; color: #b00020; cursor: pointer; font-size: 0.85em; padding: 0 0.2rem; }}
+    .genre-form input {{ padding: 0.2rem 0.4rem; }}
   </style>
 </head>
 <body>
   <h1>lidarr-similar</h1>
+  {_render_ignore_list(ignored_names)}
+  {_render_genre_ignore_list(ignored_genres)}
   {error_banner}
   {action_error}
   {action_message}
@@ -306,6 +396,43 @@ def render_page(
   {body}
 </body>
 </html>"""
+
+
+def _render_ignore_list(ignored_names: list[str]) -> str:
+    if not ignored_names:
+        return ""
+    items = "".join(
+        f"<li><span>{html.escape(name)}</span>"
+        f'<form method="post" action="/unignore"><input type="hidden" name="name" value="{html.escape(name, quote=True)}">'
+        '<button type="submit">Unignore</button></form></li>'
+        for name in ignored_names
+    )
+    return f"""
+    <details class="ignore-list">
+      <summary>Ignored artists ({len(ignored_names)})</summary>
+      <ul>{items}</ul>
+    </details>
+    """
+
+
+def _render_genre_ignore_list(ignored_genres: list[str]) -> str:
+    items = "".join(
+        f"<li><span>{html.escape(genre)}</span>"
+        f'<form method="post" action="/unignore-genre"><input type="hidden" name="genre" value="{html.escape(genre, quote=True)}">'
+        '<button type="submit">Unignore</button></form></li>'
+        for genre in ignored_genres
+    )
+    summary = f"Ignored genres ({len(ignored_genres)})" if ignored_genres else "Ignored genres"
+    return f"""
+    <details class="ignore-list">
+      <summary>{summary}</summary>
+      <ul>{items}</ul>
+      <form class="genre-form" method="post" action="/ignore-genre">
+        <input type="text" name="genre" placeholder="e.g. Rap" required>
+        <button type="submit">Ignore genre</button>
+      </form>
+    </details>
+    """
 
 
 def _render_pagination(page: int, total_pages: int, min_score: float) -> str:
@@ -325,14 +452,17 @@ def _render_pagination(page: int, total_pages: int, min_score: float) -> str:
 
 
 def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> str:
-    genres = ", ".join(candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else []))
+    all_genres = candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else [])
+    genres_cell = " ".join(_render_genre_tag(g) for g in all_genres) or "-"
     last_release = html.escape(candidate.discogs_latest_release_year) if candidate.discogs_latest_release_year else "-"
     name_attr = html.escape(candidate.name, quote=True)
 
     badges = []
     if candidate.already_in_library:
         badges.append('<span class="badge">already in library</span>')
-    if candidate.ignored:
+    if candidate.ignored and candidate.ignored_genre:
+        badges.append(f'<span class="badge badge-ignored">ignored: genre "{html.escape(candidate.ignored_genre)}"</span>')
+    elif candidate.ignored:
         badges.append('<span class="badge badge-ignored">ignored</span>')
     status = " ".join(badges) or "-"
 
@@ -342,7 +472,10 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
     elif candidate.already_in_library:
         row_class = ' class="in-library"'
 
-    if candidate.ignored:
+    if candidate.ignored_genre:
+        # Undoing this means un-banning the genre (top-of-page section), not un-ignoring one artist.
+        actions = ""
+    elif candidate.ignored:
         actions = (
             f'<form method="post" action="/unignore"><input type="hidden" name="name" value="{name_attr}">'
             f'<button type="submit">Unignore</button></form>'
@@ -370,7 +503,19 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
         f"<td>{html.escape(','.join(candidate.sources))}</td>"
         f"<td>{last_release}</td>"
         f"<td>{status}</td>"
-        f"<td>{html.escape(genres) or '-'}</td>"
+        f"<td>{genres_cell}</td>"
         f'<td class="actions">{actions}</td>'
         "</tr>"
+    )
+
+
+def _render_genre_tag(genre: str) -> str:
+    genre_attr = html.escape(genre, quote=True)
+    return (
+        '<span class="genre-tag">'
+        f"{html.escape(genre)}"
+        f'<form method="post" action="/ignore-genre" style="display:inline">'
+        f'<input type="hidden" name="genre" value="{genre_attr}">'
+        f'<button type="submit" class="genre-ignore-btn" title="Ignore this genre">×</button>'
+        "</form></span>"
     )

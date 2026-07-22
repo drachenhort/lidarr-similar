@@ -123,6 +123,18 @@ Each row has actions depending on its state:
   aren't hidden: they stay visible, tagged "ignored" and pushed to the bottom of the list
   regardless of score, with an **Unignore** button to bring them back.
 
+An **"Ignored artists"** panel at the top of the page (above the discovery controls) lists
+everything on the ignore list, each with its own Unignore button, so you can review or undo
+past ignores without hunting through the results table.
+
+You can also ban whole genres, e.g. if you never want Rap suggested: an **"Ignored genres"**
+panel next to the ignored-artists one lets you type a genre and ignore it, and every genre
+tag shown in a row's Genres column has a small **×** to ban it with one click. Matching is a
+case-insensitive substring check (so banning "Rap" also catches Deezer's "Rap/Hip Hop"),
+since genre data varies in granularity between Discogs and Deezer. Genre-banned candidates
+are tagged like artist-ignores, but have no per-row Unignore — undo via the "Ignored genres"
+panel instead, since it affects every artist in that genre at once.
+
 #### Docker / Unraid
 
 A `Dockerfile` and `docker-compose.yml` are included. To run it:
