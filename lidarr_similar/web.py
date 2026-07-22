@@ -172,6 +172,8 @@ _BASE_STYLE = """
     .hint { color: var(--dim); font-size: 0.85em; }
 
     .toolbar { display: flex; justify-content: space-between; align-items: center; margin: 1.25rem 0 1rem; gap: 1rem; flex-wrap: wrap; }
+    .sort-form { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; color: var(--dim); }
+    .sort-form select { background: var(--panel); color: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
     .pagination { margin-top: 1.1rem; display: flex; gap: 0.9rem; align-items: center; font-size: 0.88rem; color: var(--dim); }
     .pagination a { text-decoration: none; color: var(--amber); }
     .pagination a.disabled { pointer-events: none; color: var(--line); }
@@ -251,12 +253,21 @@ def _is_lidarr_add_enabled() -> bool:
     return all(item.present and item.valid for item in items.values())
 
 
+_SORT_KEYS = {
+    "score": lambda c: (-c.similarity,),
+    "deezer_fans": lambda c: (c.popularity is None, -(c.popularity or 0)),
+    "lb_listeners": lambda c: (c.listenbrainz_listeners is None, -(c.listenbrainz_listeners or 0)),
+}
+
+
 @app.get("/", response_class=HTMLResponse)
-async def index(min_score: float = 0.0, page: int = 1, message: str | None = None, error: str | None = None) -> str:
+async def index(
+    min_score: float = 0.0, page: int = 1, sort: str = "score", message: str | None = None, error: str | None = None
+) -> str:
     store = CandidateStore(_store_path())
     try:
         candidates = [c for c in store.load_all() if c.similarity >= min_score]
-        candidates.sort(key=lambda c: (c.ignored, -c.similarity))
+        candidates.sort(key=lambda c: (c.ignored, *_SORT_KEYS.get(sort, _SORT_KEYS["score"])(c)))
         last_updated = store.last_updated()
     finally:
         store.close()
@@ -279,6 +290,7 @@ async def index(min_score: float = 0.0, page: int = 1, message: str | None = Non
         last_updated,
         min_score,
         page,
+        sort,
         _status,
         lidarr_add_enabled,
         message,
@@ -535,11 +547,19 @@ async def _run_discovery(config: Config) -> None:
         _status.running = False
 
 
+_SORT_LABELS = {
+    "score": "Similarity score",
+    "deezer_fans": "Deezer fans",
+    "lb_listeners": "LB listeners",
+}
+
+
 def render_page(
     candidates: list[Candidate],
     last_updated: str | None,
     min_score: float,
     page: int,
+    sort: str,
     status: RefreshStatus,
     lidarr_add_enabled: bool,
     message: str | None,
@@ -569,7 +589,7 @@ def render_page(
       <tbody>{rows}</tbody>
     </table>
     </div>
-    {_render_pagination(page, total_pages, min_score)}
+    {_render_pagination(page, total_pages, min_score, sort)}
     """
     if status.running:
         progress = f" ({status.enriched}/{status.total} enriched)" if status.total else ""
@@ -612,6 +632,7 @@ def render_page(
   {lidarr_note}
   <div class="toolbar">
     {toolbar}
+    {_render_sort_selector(sort, min_score)}
     <form method="post" action="/refresh">
       {button}
     </form>
@@ -768,11 +789,11 @@ def _render_genre_ignore_list(ignored_genres: list[str]) -> str:
     """
 
 
-def _render_pagination(page: int, total_pages: int, min_score: float) -> str:
+def _render_pagination(page: int, total_pages: int, min_score: float, sort: str) -> str:
     if total_pages <= 1:
         return ""
-    prev_qs = urlencode({"min_score": min_score, "page": page - 1})
-    next_qs = urlencode({"min_score": min_score, "page": page + 1})
+    prev_qs = urlencode({"min_score": min_score, "sort": sort, "page": page - 1})
+    next_qs = urlencode({"min_score": min_score, "sort": sort, "page": page + 1})
     prev_class = "disabled" if page <= 1 else ""
     next_class = "disabled" if page >= total_pages else ""
     return (
@@ -782,6 +803,20 @@ def _render_pagination(page: int, total_pages: int, min_score: float) -> str:
         f'<a class="{next_class}" href="/?{next_qs}">Next &rarr;</a>'
         "</div>"
     )
+
+
+def _render_sort_selector(sort: str, min_score: float) -> str:
+    options = "".join(
+        f'<option value="{key}"{" selected" if key == sort else ""}>{html.escape(label)}</option>'
+        for key, label in _SORT_LABELS.items()
+    )
+    min_score_attr = html.escape(str(min_score), quote=True)
+    return f"""
+    <form method="get" action="/" class="sort-form">
+      <input type="hidden" name="min_score" value="{min_score_attr}">
+      <label>Sort by <select name="sort" onchange="this.form.submit()">{options}</select></label>
+    </form>
+    """
 
 
 def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> str:
