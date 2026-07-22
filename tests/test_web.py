@@ -860,3 +860,39 @@ def test_test_lidarr_connection_falls_back_to_saved_api_key_when_field_left_blan
 
     assert response.status_code == 200
     assert "Connected to Lidarr 1.2.3.4" in response.text
+
+
+@respx.mock
+def test_test_lidarr_key_json_reports_success():
+    respx.get("http://lidarr.local/api/v1/system/status").mock(
+        return_value=httpx.Response(200, json={"version": "1.2.3.4"})
+    )
+
+    client = TestClient(app)
+    response = client.post("/config/test-lidarr-key", data={"url": "http://lidarr.local", "api_key": "new-key"})
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "version": "1.2.3.4"}
+
+
+@respx.mock
+def test_test_lidarr_key_json_reports_failure():
+    respx.get("http://lidarr.local/api/v1/system/status").mock(return_value=httpx.Response(401))
+
+    client = TestClient(app)
+    response = client.post("/config/test-lidarr-key", data={"url": "http://lidarr.local", "api_key": "bad-key"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is False
+    assert "401" in data["error"]
+
+
+def test_test_lidarr_key_json_requires_url_and_key():
+    client = TestClient(app)
+    response = client.post("/config/test-lidarr-key", data={"api_key": "some-key"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is False
+    assert "Set a Lidarr URL" in data["error"]

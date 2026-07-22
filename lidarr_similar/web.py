@@ -44,7 +44,7 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from lidarr_similar import __version__
 from lidarr_similar.cache import Cache
@@ -247,6 +247,19 @@ _BASE_STYLE = """
       .module-status { margin-left: 0; }
     }
 
+    .edit-key-btn { margin-left: 0.5rem; font-size: 0.75rem; padding: 0.3rem 0.6rem; }
+    .key-modal {
+      background: var(--panel); color: var(--paper); border: 1px solid var(--line);
+      border-radius: 12px; padding: 1.4rem; max-width: 420px; width: 90%;
+    }
+    .key-modal::backdrop { background: rgba(10, 10, 16, 0.7); }
+    .key-modal h2 { font-family: var(--font-mono); font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 1rem; font-weight: 700; }
+    .key-modal input[type="password"] { width: 100%; }
+    .key-test-status { margin-top: 0.8rem; font-size: 0.82rem; min-height: 1.2rem; color: var(--dim); }
+    .key-test-status.ok { color: var(--teal); }
+    .key-test-status.fail { color: var(--rose); }
+    .key-modal-actions { margin-top: 1.2rem; display: flex; justify-content: flex-end; gap: 0.6rem; }
+
     @media (prefers-reduced-motion: reduce) {
       button { transition: none; }
     }
@@ -401,6 +414,28 @@ async def test_lidarr_connection(request: Request) -> RedirectResponse:
     except Exception as error:  # noqa: BLE001 - surface any failure (auth, network, timeout) to the user
         query = urlencode({"error": f"Could not connect to Lidarr: {_describe(error)}"})
         return RedirectResponse(f"/config?{query}", status_code=303)
+    finally:
+        await lidarr.aclose()
+
+
+@app.post("/config/test-lidarr-key")
+async def test_lidarr_key(request: Request) -> JSONResponse:
+    """JSON variant of /config/test-lidarr for the API-key edit overlay's live
+    validation - tests a key as it's typed, before it's saved, without a full page
+    navigation. Not used by the plain HTML form (which posts to /config/test-lidarr)."""
+    form = await request.form()
+    url = (str(form.get("url") or "")).strip() or get_effective("LIDARR_URL")
+    api_key = (str(form.get("api_key") or "")).strip()
+
+    if not url or not api_key:
+        return JSONResponse({"ok": False, "error": "Set a Lidarr URL and API key first."})
+
+    lidarr = LidarrClient(url, api_key)
+    try:
+        status = await lidarr.system_status()
+        return JSONResponse({"ok": True, "version": status.get("version", "unknown version")})
+    except Exception as error:  # noqa: BLE001 - surface any failure (auth, network, timeout) to the user
+        return JSONResponse({"ok": False, "error": _describe(error)})
     finally:
         await lidarr.aclose()
 
@@ -781,6 +816,70 @@ def render_config_page(
       <span class="hint">Secret fields are never pre-filled or echoed back - leave one blank to keep its current value.</span>
     </p>
   </form>
+
+  <dialog id="lidarr-key-dialog" class="key-modal">
+    <h2>Update Lidarr API key</h2>
+    <input type="password" id="lidarr-key-input" placeholder="Paste your new Lidarr API key" autocomplete="off">
+    <div class="key-test-status" id="lidarr-key-status"></div>
+    <div class="key-modal-actions">
+      <button type="button" onclick="document.getElementById('lidarr-key-dialog').close()">Cancel</button>
+      <button type="button" id="lidarr-key-save" class="test-button" disabled>Save key</button>
+    </div>
+  </dialog>
+  <script>
+    (function () {{
+      var dialog = document.getElementById('lidarr-key-dialog');
+      var input = document.getElementById('lidarr-key-input');
+      var status = document.getElementById('lidarr-key-status');
+      var saveBtn = document.getElementById('lidarr-key-save');
+      var urlField = document.querySelector('input[name="LIDARR_URL"]');
+      var realKeyField = document.querySelector('input[name="LIDARR_API_KEY"]');
+      var timer = null;
+
+      function setStatus(cls, text) {{
+        status.className = 'key-test-status' + (cls ? ' ' + cls : '');
+        status.textContent = text;
+      }}
+
+      dialog.addEventListener('close', function () {{
+        input.value = '';
+        setStatus('', '');
+        saveBtn.disabled = true;
+      }});
+
+      input.addEventListener('input', function () {{
+        saveBtn.disabled = true;
+        clearTimeout(timer);
+        var key = input.value.trim();
+        if (!key) {{ setStatus('', ''); return; }}
+        setStatus('', 'Testing…');
+        timer = setTimeout(function () {{
+          var body = new URLSearchParams();
+          body.set('url', urlField ? urlField.value : '');
+          body.set('api_key', key);
+          fetch('/config/test-lidarr-key', {{ method: 'POST', body: body }})
+            .then(function (r) {{ return r.json(); }})
+            .then(function (data) {{
+              if (data.ok) {{
+                setStatus('ok', 'Connected to Lidarr ' + data.version + '.');
+                saveBtn.disabled = false;
+              }} else {{
+                setStatus('fail', data.error || 'Could not connect.');
+              }}
+            }})
+            .catch(function () {{ setStatus('fail', 'Could not reach the server to test this key.'); }});
+        }}, 500);
+      }});
+
+      saveBtn.addEventListener('click', function () {{
+        if (realKeyField) {{
+          realKeyField.value = input.value.trim();
+          dialog.close();
+          realKeyField.form.submit();
+        }}
+      }});
+    }})();
+  </script>
 </body>
 </html>"""
 
@@ -837,6 +936,12 @@ def _render_jack_row(item: ConfigItem, profiles: dict[str, list[dict]]) -> str:
         hint_bits.append(item.note)
     hint = " &middot; ".join(html.escape(bit) for bit in hint_bits)
     input_html = _render_config_input(item, profiles)
+    edit_button = (
+        '<button type="button" class="edit-key-btn" '
+        "onclick=\"document.getElementById('lidarr-key-dialog').showModal()\">Edit &amp; test</button>"
+        if item.name == "LIDARR_API_KEY"
+        else ""
+    )
     return f"""
     <div class="jack-row">
       <div class="jack-label">
@@ -846,7 +951,7 @@ def _render_jack_row(item: ConfigItem, profiles: dict[str, list[dict]]) -> str:
           <div class="jack-hint">{hint}</div>
         </div>
       </div>
-      <div class="jack-input">{input_html}</div>
+      <div class="jack-input">{input_html}{edit_button}</div>
     </div>"""
 
 
