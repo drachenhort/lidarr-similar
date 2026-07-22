@@ -4,6 +4,13 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+## v0.3.1 - 2026-07-22
+
+### Changed
+- Added an MIT `LICENSE` and `license = "MIT"` in `pyproject.toml`.
+- Fixed an outdated README claim that getting listed in the public Unraid CA app store requires a PR against `github.com/Squidly271/AppFeed` - that repo/process no longer exists; it's now an interactive submission at [ca.unraid.net/submit](https://ca.unraid.net/submit) under the submitter's own GitHub account.
+- Top-level descriptions (GitHub repo "About", `pyproject.toml`, README opening line) now credit Deezer and ListenBrainz alongside Last.fm, matching the detailed breakdown already in the README body.
+
 ## v0.3.0 - 2026-07-22
 
 ### Added
