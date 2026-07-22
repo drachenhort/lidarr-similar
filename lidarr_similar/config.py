@@ -27,9 +27,11 @@ OVERRIDABLE_KEYS = (
     "LIDARR_ROOT_FOLDER",
     "LIDARR_QUALITY_PROFILE_ID",
     "LIDARR_METADATA_PROFILE_ID",
+    "AUTH_PASSWORD",
+    "AUTH_SKIP_LOCAL",
 )
 
-SECRET_KEYS = ("LASTFM_API_KEY", "DISCOGS_TOKEN", "LIDARR_API_KEY")
+SECRET_KEYS = ("LASTFM_API_KEY", "DISCOGS_TOKEN", "LIDARR_API_KEY", "AUTH_PASSWORD")
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,18 @@ def get_effective(name: str) -> str | None:
     environment variable. For callers (like the /config page) that need one value without
     constructing a full Config, which would raise if LASTFM_API_KEY/USERNAME are missing."""
     return _get(_load_overrides(), name)
+
+
+def get_auth_settings() -> tuple[str | None, bool]:
+    """(password, skip_login_for_local_addresses). Checked on every request by the auth
+    middleware, so this stays a cheap, standalone lookup rather than going through the
+    full Config (which raises if LASTFM_API_KEY/USERNAME are missing). No password set
+    means the login page is skipped entirely - opt-in, so upgrading doesn't lock anyone
+    out of an instance that was previously unauthenticated."""
+    overrides = _load_overrides()
+    password = _get(overrides, "AUTH_PASSWORD")
+    skip_local = (_get(overrides, "AUTH_SKIP_LOCAL", "false") or "false").lower() == "true"
+    return password, skip_local
 
 
 def _require(overrides: dict[str, str], name: str) -> str:
@@ -188,6 +202,12 @@ def describe_config() -> list[ConfigItem]:
             valid=metadata_profile_valid,
             note=None if metadata_profile_valid else "set, but not a number - must be the profile's numeric ID, not its name",
             value_preview=metadata_profile_id_raw,
+        ),
+        item("AUTH_PASSWORD", "password-protecting the web UI (optional)"),
+        item(
+            "AUTH_SKIP_LOCAL",
+            "skip the login page for requests from private/loopback addresses",
+            value_preview=_get(overrides, "AUTH_SKIP_LOCAL", "false (default)"),
         ),
         ConfigItem(
             "CACHE_PATH",

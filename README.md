@@ -130,6 +130,27 @@ against Lidarr's `/api/v1/system/status` endpoint, and reports either the connec
 Lidarr version or the specific reason it failed (wrong URL, bad API key, unreachable
 host, etc.) - useful for catching a typo before running a full discovery.
 
+#### Password-protecting the web UI
+
+By default the web UI has no login - fine for a container only reachable on your own
+LAN. To require a password, set `AUTH_PASSWORD` (via `/config` or as an environment
+variable). Once set, every page redirects to `/login` until a matching password is
+entered; a session cookie (30 days) keeps you logged in after that. Leave it unset to
+keep the previous no-login behavior - upgrading never locks you out of an instance that
+wasn't password-protected before.
+
+Enable `AUTH_SKIP_LOCAL` (also on `/config`) to skip the login page for requests from
+private/loopback addresses (RFC 1918, `127.0.0.0/8`, etc.) even with a password set -
+useful if you want the login screen for anyone reaching the container from outside your
+LAN (e.g. via a reverse proxy) but not for devices already on your home network. Behind
+a reverse proxy, the client's address is read from `X-Forwarded-For` when present.
+
+On `/config`, editing `LIDARR_API_KEY` and `AUTH_PASSWORD` next to each other from
+"Edit & test" style controls: the Lidarr key overlay tests itself against your Lidarr
+instance as you type before you can save it (see above); `AUTH_PASSWORD` is a plain
+password field like other secrets - never pre-filled or echoed back, so leaving it
+blank on save keeps the current password unchanged.
+
 The index page itself shows the most recent discovery results (persisted in `STORE_PATH`
 so they survive restarts) and has a "Run discovery now" button. A full run can take a
 few minutes — Discogs enrichment alone is rate-limited to 60 requests/min and

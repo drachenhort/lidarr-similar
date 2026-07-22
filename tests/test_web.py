@@ -9,6 +9,7 @@ import respx
 from fastapi.testclient import TestClient
 
 from lidarr_similar import web
+from lidarr_similar.auth import SESSION_COOKIE_NAME
 from lidarr_similar.config import Config, get_effective
 from lidarr_similar.models import Candidate
 from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList, SettingsStore
@@ -22,6 +23,15 @@ def reset_status():
     yield
     web._status.running = False
     web._status.error = None
+
+
+@pytest.fixture(autouse=True)
+def reset_sessions():
+    from lidarr_similar import auth as auth_module
+
+    auth_module._sessions.clear()
+    yield
+    auth_module._sessions.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -896,3 +906,84 @@ def test_test_lidarr_key_json_requires_url_and_key():
     data = response.json()
     assert data["ok"] is False
     assert "Set a Lidarr URL" in data["error"]
+
+
+def test_no_password_set_skips_login_entirely(monkeypatch):
+    client = TestClient(app)
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 200
+
+
+def test_protected_route_redirects_to_login_when_password_set(monkeypatch):
+    client = TestClient(app)
+    client.post("/config", data={"AUTH_PASSWORD": "secret123"}, follow_redirects=False)
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login")
+
+
+def test_correct_password_logs_in_and_grants_access(monkeypatch):
+    client = TestClient(app)
+    client.post("/config", data={"AUTH_PASSWORD": "secret123"}, follow_redirects=False)
+
+    login_response = client.post("/login", data={"password": "secret123", "next": "/"}, follow_redirects=False)
+    assert login_response.status_code == 303
+    assert login_response.headers["location"] == "/"
+    assert SESSION_COOKIE_NAME in login_response.cookies
+
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 200
+
+
+def test_wrong_password_redisplays_login_with_error(monkeypatch):
+    client = TestClient(app)
+    client.post("/config", data={"AUTH_PASSWORD": "secret123"}, follow_redirects=False)
+
+    login_response = client.post("/login", data={"password": "wrong", "next": "/"}, follow_redirects=True)
+
+    assert login_response.status_code == 200
+    assert "Incorrect password" in login_response.text
+    assert SESSION_COOKIE_NAME not in login_response.cookies
+
+
+def test_logout_revokes_session(monkeypatch):
+    client = TestClient(app)
+    client.post("/config", data={"AUTH_PASSWORD": "secret123"}, follow_redirects=False)
+    client.post("/login", data={"password": "secret123", "next": "/"}, follow_redirects=False)
+    assert client.get("/", follow_redirects=False).status_code == 200
+
+    client.post("/logout", follow_redirects=False)
+
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login")
+
+
+def test_auth_skip_local_bypasses_login_for_loopback(monkeypatch):
+    client = TestClient(app)
+    client.post(
+        "/config",
+        data={"AUTH_PASSWORD": "secret123", "AUTH_SKIP_LOCAL": "true"},
+        follow_redirects=False,
+    )
+
+    # starlette's TestClient connects from "testclient" by default, not a real loopback
+    # address - simulate a real local client via X-Forwarded-For, as a reverse-proxied
+    # same-LAN request would send.
+    response = client.get("/", headers={"X-Forwarded-For": "192.168.1.50"}, follow_redirects=False)
+
+    assert response.status_code == 200
+
+
+def test_login_redirect_ignores_external_next_url(monkeypatch):
+    client = TestClient(app)
+    client.post("/config", data={"AUTH_PASSWORD": "secret123"}, follow_redirects=False)
+
+    response = client.post(
+        "/login", data={"password": "secret123", "next": "//evil.example.com"}, follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"

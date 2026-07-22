@@ -18,6 +18,8 @@ services:
       LIDARR_ROOT_FOLDER: ${LIDARR_ROOT_FOLDER:-}
       LIDARR_QUALITY_PROFILE_ID: ${LIDARR_QUALITY_PROFILE_ID:-}
       LIDARR_METADATA_PROFILE_ID: ${LIDARR_METADATA_PROFILE_ID:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      AUTH_SKIP_LOCAL: ${AUTH_SKIP_LOCAL:-false}
     volumes:
       - ./data:/data
     restart: unless-stopped

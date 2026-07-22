@@ -43,4 +43,7 @@
   <Config Name="DISCOGS_ENABLED" Target="DISCOGS_ENABLED" Default="true" Mode="" Description="Enable Discogs genre/style enrichment (true/false)" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
   <Config Name="DEEZER_ENABLED" Target="DEEZER_ENABLED" Default="true" Mode="" Description="Enable Deezer as a similarity source and popularity signal (true/false)" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
   <Config Name="LISTENBRAINZ_ENABLED" Target="LISTENBRAINZ_ENABLED" Default="true" Mode="" Description="Enable ListenBrainz listener-count popularity enrichment (true/false)" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+
+  <Config Name="AUTH_PASSWORD" Target="AUTH_PASSWORD" Default="" Mode="" Description="Password-protects the web UI - leave blank to keep it open with no login, same as before this option existed" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="AUTH_SKIP_LOCAL" Target="AUTH_SKIP_LOCAL" Default="false" Mode="" Description="Skip the login page for requests from private/loopback addresses (e.g. your own LAN) even when AUTH_PASSWORD is set (true/false)" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 </Container>

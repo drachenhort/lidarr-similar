@@ -47,8 +47,18 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from lidarr_similar import __version__
+from lidarr_similar.auth import (
+    SESSION_COOKIE_NAME,
+    SESSION_MAX_AGE_SECONDS,
+    check_password,
+    client_address,
+    create_session,
+    destroy_session,
+    is_local_address,
+    is_valid_session,
+)
 from lidarr_similar.cache import Cache
-from lidarr_similar.config import OVERRIDABLE_KEYS, Config, ConfigItem, describe_config, get_effective
+from lidarr_similar.config import OVERRIDABLE_KEYS, Config, ConfigItem, describe_config, get_auth_settings, get_effective
 from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
@@ -61,6 +71,27 @@ from lidarr_similar.store import CandidateStore, GenreIgnoreList, IgnoreList, Se
 app = FastAPI(title="lidarr-similar")
 
 PAGE_SIZE = 50
+
+_PUBLIC_PATHS = {"/login"}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Gates every route behind a session cookie once AUTH_PASSWORD is set - opt-in,
+    so instances upgraded from a version without this feature stay open by default.
+    AUTH_SKIP_LOCAL additionally lets private/loopback-address requests (e.g. same LAN
+    as an Unraid box) through without logging in at all."""
+    password, skip_local = get_auth_settings()
+    if not password or request.url.path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if skip_local and is_local_address(client_address(request.headers, request.client.host if request.client else None)):
+        return await call_next(request)
+    if is_valid_session(request.cookies.get(SESSION_COOKIE_NAME)):
+        return await call_next(request)
+    if request.method != "GET":
+        return RedirectResponse("/login", status_code=303)
+    next_qs = urlencode({"next": str(request.url.path)})
+    return RedirectResponse(f"/login?{next_qs}", status_code=303)
 
 _BASE_STYLE = """
     :root {
@@ -260,6 +291,28 @@ _BASE_STYLE = """
     .key-test-status.fail { color: var(--rose); }
     .key-modal-actions { margin-top: 1.2rem; display: flex; justify-content: flex-end; gap: 0.6rem; }
 
+    .logout-form { margin-left: 1rem; }
+    .logout-form button {
+      border: none; background: none; color: var(--dim); font-size: 0.85em; letter-spacing: 0.02em;
+      text-transform: uppercase; padding: 0; cursor: pointer;
+    }
+    .logout-form button:hover { color: var(--rose); border-color: transparent; background: none; }
+
+    .login-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; max-width: none; }
+    .login-card {
+      width: 100%; max-width: 320px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--panel); padding: 2rem 1.75rem; text-align: center;
+    }
+    .login-card .wordmark { font-size: 1.6rem; margin-bottom: 1.4rem; }
+    .login-card form { display: flex; flex-direction: column; gap: 0.6rem; }
+    .login-card label { text-align: left; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.72rem; }
+    .login-card input[type="password"] { width: 100%; margin-bottom: 0.4rem; }
+    .login-card button[type="submit"] {
+      background: var(--amber); border-color: var(--amber); color: var(--ink); font-weight: 600; margin-top: 0.3rem;
+    }
+    .login-card button[type="submit"]:hover { background: var(--paper); border-color: var(--paper); }
+    .login-card .banner { text-align: left; }
+
     @media (prefers-reduced-motion: reduce) {
       button { transition: none; }
     }
@@ -324,6 +377,40 @@ _SORT_KEYS = {
     "lb_listeners": lambda c: (c.listenbrainz_listeners is None, -(c.listenbrainz_listeners or 0)),
     "not_in_library": lambda c: (c.already_in_library, -c.similarity),
 }
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(next: str = "/", error: str | None = None) -> str:
+    return render_login_page(next, error)
+
+
+@app.post("/login")
+async def login(request: Request) -> RedirectResponse:
+    form = await request.form()
+    submitted = str(form.get("password") or "")
+    next_path = str(form.get("next") or "/")
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        next_path = "/"  # only ever redirect within this app, never to an attacker-supplied host
+
+    password, _ = get_auth_settings()
+    if not password or not check_password(submitted, password):
+        query = urlencode({"next": next_path, "error": "Incorrect password."})
+        return RedirectResponse(f"/login?{query}", status_code=303)
+
+    token = create_session()
+    response = RedirectResponse(next_path, status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE_NAME, token, max_age=SESSION_MAX_AGE_SECONDS, httponly=True, samesite="lax"
+    )
+    return response
+
+
+@app.post("/logout")
+async def logout(request: Request) -> RedirectResponse:
+    destroy_session(request.cookies.get(SESSION_COOKIE_NAME))
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -670,6 +757,38 @@ _SORT_LABELS = {
 }
 
 
+def _render_logout_link() -> str:
+    password, _ = get_auth_settings()
+    if not password:
+        return ""
+    return '<form method="post" action="/logout" class="logout-form"><button type="submit">Log out</button></form>'
+
+
+def render_login_page(next_path: str, error: str | None) -> str:
+    error_banner = f'<p class="banner error">{html.escape(error)}</p>' if error else ""
+    next_attr = html.escape(next_path, quote=True)
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lidarr-similar - Log in</title>
+  <style>{_BASE_STYLE}</style>
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h1 class="wordmark">lidarr<span class="accent">‑</span>similar</h1>
+    {error_banner}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{next_attr}">
+      <label for="password" class="hint">Password</label>
+      <input type="password" name="password" id="password" autocomplete="current-password" autofocus required>
+      <button type="submit">Log in</button>
+    </form>
+  </div>
+</body>
+</html>"""
+
+
 def render_page(
     candidates: list[Candidate],
     last_updated: str | None,
@@ -738,7 +857,7 @@ def render_page(
 <body>
   <div class="site-header">
     <h1 class="wordmark">lidarr<span class="accent">‑</span>similar<span class="version-badge">v{html.escape(__version__)}</span></h1>
-    <nav class="nav"><a href="/config">Configuration status</a></nav>
+    <nav class="nav"><a href="/config">Configuration status</a>{_render_logout_link()}</nav>
   </div>
   {_render_ignore_list(ignored_names)}
   {_render_genre_ignore_list(ignored_genres)}
@@ -770,6 +889,7 @@ _CONFIG_GROUPS = (
         "Genre/style tags and popularity signals layered onto candidates.",
         ("DISCOGS_TOKEN", "DISCOGS_ENABLED", "DEEZER_ENABLED", "LISTENBRAINZ_ENABLED"),
     ),
+    ("ACCESS", "Optional password protection for this web UI.", ("AUTH_PASSWORD", "AUTH_SKIP_LOCAL")),
     ("STORAGE", "Where results, settings, and the enrichment cache persist. Environment-only.", ("CACHE_PATH", "STORE_PATH")),
 )
 
@@ -804,7 +924,7 @@ def render_config_page(
 <body>
   <div class="site-header">
     <h1 class="wordmark">Configuration</h1>
-    <nav class="nav"><a href="/">&larr; Back to results</a></nav>
+    <nav class="nav"><a href="/">&larr; Back to results</a>{_render_logout_link()}</nav>
   </div>
   {summary}
   {action_message}
@@ -955,7 +1075,7 @@ def _render_jack_row(item: ConfigItem, profiles: dict[str, list[dict]]) -> str:
     </div>"""
 
 
-_BOOLEAN_KEYS = {"DISCOGS_ENABLED", "DEEZER_ENABLED", "LISTENBRAINZ_ENABLED"}
+_BOOLEAN_KEYS = {"DISCOGS_ENABLED", "DEEZER_ENABLED", "LISTENBRAINZ_ENABLED", "AUTH_SKIP_LOCAL"}
 
 
 _PROFILE_KEYS = {"LIDARR_QUALITY_PROFILE_ID", "LIDARR_METADATA_PROFILE_ID"}
