@@ -159,17 +159,20 @@ panel instead, since it affects every artist in that genre at once.
 
 #### Docker / Unraid
 
-A `Dockerfile` and `docker-compose.yml` are included. To run it:
+A prebuilt image is published at `ghcr.io/drachenhort/lidarr-similar:latest` - no need
+to clone the repo or build anything yourself. A `Dockerfile` and `docker-compose.yml`
+are also included if you'd rather build from source.
+
+Using the published image with `docker compose` (default in `docker-compose.yml`):
 
 ```bash
 cp .env.example .env   # create this yourself, or export the vars directly
-docker compose up -d --build
+docker compose up -d
 ```
 
 Or with `docker run` directly:
 
 ```bash
-docker build -t lidarr-similar .
 docker run -d \
   --name lidarr-similar \
   -p 8000:8000 \
@@ -179,14 +182,18 @@ docker run -d \
   -e LIDARR_URL=http://your-lidarr-host:8686 \
   -e LIDARR_API_KEY=your_lidarr_key \
   -v /path/on/unraid/appdata/lidarr-similar:/data \
-  lidarr-similar
+  ghcr.io/drachenhort/lidarr-similar:latest
 ```
 
-On Unraid specifically: add this as a container via the Docker tab (either point it at
-this repo with a build, or build the image on the box and reference it locally), mount
-an appdata path to `/data` so the SQLite store and cache persist across container
-updates, and set the same environment variables under the container's config. The web UI
-will be reachable on the port you map to `8000`.
+To build from source instead, swap `ghcr.io/drachenhort/lidarr-similar:latest` for
+`build: .` in `docker-compose.yml` (already there, commented out), or run
+`docker build -t lidarr-similar .` and use `lidarr-similar` as the image name above.
+
+On Unraid specifically: add this as a container via the Docker tab, pointing the
+repository field at `ghcr.io/drachenhort/lidarr-similar:latest`, mount an appdata path
+to `/data` so the SQLite store and cache persist across container updates, and set the
+same environment variables under the container's config. The web UI will be reachable
+on the port you map to `8000`.
 
 ## Development
 

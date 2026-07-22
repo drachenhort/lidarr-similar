@@ -1,6 +1,8 @@
 services:
   lidarr-similar:
-    build: .
+    image: ghcr.io/drachenhort/lidarr-similar:latest
+    # Uncomment to build from source instead of pulling the published image:
+    # build: .
     container_name: lidarr-similar
     ports:
       - "8000:8000"
