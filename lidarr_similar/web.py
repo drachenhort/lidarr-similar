@@ -61,35 +61,154 @@ app = FastAPI(title="lidarr-similar")
 PAGE_SIZE = 50
 
 _BASE_STYLE = """
-    body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; }
-    th { background: #f5f5f5; }
+    :root {
+      --ink: #14151f;
+      --panel: #1b1d2b;
+      --panel-head: #171826;
+      --panel-hover: #21243680;
+      --panel-hover-solid: #262a3d;
+      --line: #2c2f42;
+      --paper: #ece9f5;
+      --dim: #8d8aa3;
+      --amber: #e2a03f;
+      --amber-soft: rgba(226, 160, 63, 0.14);
+      --teal: #5ec2ac;
+      --teal-soft: rgba(94, 194, 172, 0.14);
+      --rose: #e07a8c;
+      --rose-soft: rgba(224, 122, 140, 0.14);
+      --font-display: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", "URW Palladio L", serif;
+      --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: var(--font-body);
+      background: var(--ink);
+      color: var(--paper);
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+      line-height: 1.5;
+    }
+    a { color: var(--amber); }
+    :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+    .site-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .wordmark {
+      font-family: var(--font-display);
+      font-size: 1.9rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      margin: 0;
+      color: var(--paper);
+    }
+    .wordmark .accent { color: var(--amber); }
+    .nav a { text-decoration: none; font-size: 0.85em; letter-spacing: 0.02em; text-transform: uppercase; color: var(--dim); }
+    .nav a:hover { color: var(--amber); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 0.92rem; }
+    th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th {
+      background: var(--panel-head);
+      color: var(--dim);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    tbody tr:hover { background: var(--panel-hover); }
+    tbody tr:last-child td { border-bottom: none; }
+    /* Wide table (many data columns) can overflow the viewport on typical windows;
+       keep the action buttons reachable without hunting for the horizontal scrollbar. */
+    th.actions-col, td.actions {
+      position: sticky; right: 0;
+      background: var(--panel-head);
+      box-shadow: -8px 0 8px -8px rgba(0, 0, 0, 0.6);
+    }
+    td.actions { background: var(--panel); }
+    tbody tr:hover td.actions { background: var(--panel-hover-solid); }
+    td.mono, .score-num { font-family: var(--font-mono); }
+    .score-cell { min-width: 5.5rem; }
+    .score-num { font-size: 0.88rem; color: var(--paper); }
+    .meter { display: block; width: 4.5rem; height: 4px; background: var(--line); border-radius: 2px; margin-top: 0.3rem; overflow: hidden; }
+    .meter-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--teal), var(--amber)); border-radius: 2px; }
+
     form { display: inline; }
-    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-    .in-library { color: #888; }
-    .ignored-row { color: #aaa; }
-    .badge { background: #eef; color: #33a; border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.85em; }
-    .badge-ignored { background: #f5eef0; color: #a33; }
-    .banner { padding: 0.5rem 0.75rem; border-radius: 4px; }
-    .banner.error { background: #fdecea; color: #b00020; }
-    .banner.ok { background: #eaf7ea; color: #1a7a1a; }
-    .hint { color: #888; font-size: 0.9em; }
-    .actions button { font-size: 0.85em; margin-right: 0.3rem; }
-    .pagination { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }
-    .pagination a.disabled { pointer-events: none; color: #bbb; }
-    .ignore-list { margin-bottom: 1.5rem; border: 1px solid #eee; border-radius: 4px; padding: 0.6rem 0.8rem; }
-    .ignore-list summary { cursor: pointer; font-weight: 600; }
-    .ignore-list ul { list-style: none; padding: 0; margin: 0.6rem 0 0; }
-    .ignore-list li { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; }
-    .genre-tag { display: inline-block; }
-    .genre-ignore-btn { border: none; background: none; color: #b00020; cursor: pointer; font-size: 0.85em; padding: 0 0.2rem; }
-    .genre-form input { padding: 0.2rem 0.4rem; }
-    .nav { margin-bottom: 1rem; }
-    .nav a { color: #33a; text-decoration: none; font-size: 0.9em; }
-    .status-ok { color: #1a7a1a; font-weight: bold; }
-    .status-missing { color: #888; }
-    .status-invalid { color: #b00020; font-weight: bold; }
+    button, .btn {
+      font-family: var(--font-body);
+      background: transparent;
+      color: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+    }
+    button:hover { border-color: var(--amber); color: var(--amber); }
+    button:disabled { color: var(--dim); border-color: var(--line); cursor: not-allowed; }
+    .toolbar button[type="submit"]:not(:disabled) { background: var(--amber); border-color: var(--amber); color: var(--ink); font-weight: 600; }
+    .toolbar button[type="submit"]:not(:disabled):hover { background: var(--paper); border-color: var(--paper); }
+    .actions button { font-size: 0.78rem; margin-right: 0.35rem; padding: 0.3rem 0.55rem; }
+
+    .in-library { color: var(--dim); }
+    .ignored-row { color: var(--dim); }
+    .badge { background: var(--teal-soft); color: var(--teal); border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.78em; white-space: nowrap; }
+    .badge-ignored { background: var(--rose-soft); color: var(--rose); }
+
+    .banner { padding: 0.6rem 0.9rem; border-radius: 6px; border-left: 3px solid; margin: 0 0 0.9rem; font-size: 0.9rem; }
+    .banner.error { background: var(--rose-soft); color: var(--rose); border-color: var(--rose); }
+    .banner.ok { background: var(--teal-soft); color: var(--teal); border-color: var(--teal); }
+    .hint { color: var(--dim); font-size: 0.85em; }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin: 1.25rem 0 1rem; gap: 1rem; flex-wrap: wrap; }
+    .pagination { margin-top: 1.1rem; display: flex; gap: 0.9rem; align-items: center; font-size: 0.88rem; color: var(--dim); }
+    .pagination a { text-decoration: none; color: var(--amber); }
+    .pagination a.disabled { pointer-events: none; color: var(--line); }
+
+    .ignore-list { margin-bottom: 1rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 1rem; background: var(--panel); }
+    .ignore-list summary {
+      cursor: pointer; font-weight: 600; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim);
+    }
+    .ignore-list[open] summary { color: var(--amber); }
+    .ignore-list ul { list-style: none; padding: 0; margin: 0.7rem 0 0; }
+    .ignore-list li { display: flex; justify-content: space-between; align-items: center; padding: 0.3rem 0; border-bottom: 1px solid var(--line); }
+    .ignore-list li:last-child { border-bottom: none; }
+    .genre-tag {
+      display: inline-flex; align-items: center; gap: 0.3rem; background: var(--amber-soft); color: var(--amber);
+      border-radius: 999px; padding: 0.05rem 0.15rem 0.05rem 0.55rem; font-size: 0.82em; margin: 0.1rem 0.2rem 0.1rem 0;
+    }
+    .genre-ignore-btn { border: none; background: none; color: var(--rose); cursor: pointer; font-size: 1em; padding: 0 0.4rem; line-height: 1; }
+    .genre-form { margin-top: 0.7rem; display: flex; gap: 0.5rem; }
+    .genre-form input { padding: 0.35rem 0.6rem; }
+
+    input[type="text"], input[type="password"], select {
+      font-family: var(--font-body); background: var(--panel-head); color: var(--paper);
+      border: 1px solid var(--line); border-radius: 5px; padding: 0.4rem 0.6rem; font-size: 0.85rem;
+    }
+    input::placeholder { color: var(--dim); }
+
+    .status-ok { color: var(--teal); font-weight: 600; }
+    .status-missing { color: var(--dim); }
+    .status-invalid { color: var(--rose); font-weight: 600; }
+
+    @media (prefers-reduced-motion: reduce) {
+      button { transition: none; }
+    }
+    @media (max-width: 640px) {
+      body { padding: 1.25rem 0.9rem 3rem; }
+      .wordmark { font-size: 1.5rem; }
+    }
 """
 
 
@@ -439,15 +558,17 @@ def render_page(
     )
     updated_line = f"Last updated: {html.escape(last_updated)}" if last_updated else "No discovery run yet."
     body = "<p>No candidates to show.</p>" if not candidates else f"""
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
           <th>#</th><th>Artist</th><th>Score</th><th>Sources</th>
-          <th>Deezer Fans</th><th>LB Listeners</th><th>Last Release</th><th>Status</th><th>Genres</th><th>Actions</th>
+          <th>Deezer Fans</th><th>LB Listeners</th><th>Last Release</th><th>Status</th><th>Genres</th><th class="actions-col">Actions</th>
         </tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
+    </div>
     {_render_pagination(page, total_pages, min_score)}
     """
     if status.running:
@@ -479,8 +600,10 @@ def render_page(
   <style>{_BASE_STYLE}</style>
 </head>
 <body>
-  <h1>lidarr-similar</h1>
-  <div class="nav"><a href="/config">⚙ Configuration status</a></div>
+  <div class="site-header">
+    <h1 class="wordmark">lidarr<span class="accent">‑</span>similar</h1>
+    <nav class="nav"><a href="/config">Configuration status</a></nav>
+  </div>
   {_render_ignore_list(ignored_names)}
   {_render_genre_ignore_list(ignored_genres)}
   {error_banner}
@@ -522,18 +645,22 @@ def render_config_page(
   <style>{_BASE_STYLE}</style>
 </head>
 <body>
-  <h1>Configuration</h1>
-  <div class="nav"><a href="/">&larr; Back to results</a></div>
+  <div class="site-header">
+    <h1 class="wordmark">Configuration</h1>
+    <nav class="nav"><a href="/">&larr; Back to results</a></nav>
+  </div>
   {summary}
   {action_message}
   {action_error}
   <form method="post" action="/config">
+    <div class="table-wrap">
     <table>
       <thead>
         <tr><th>Variable</th><th>Status</th><th>Used for</th><th>Value</th></tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
+    </div>
     <p><button type="submit">Save configuration</button></p>
   </form>
   <p class="hint">Secret fields (API keys, tokens) are never pre-filled or echoed back - leave one blank to keep its current value. CACHE_PATH/STORE_PATH are environment-only and can't be changed here.</p>
@@ -703,17 +830,25 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
         )
         actions = add_button + ignore_button
 
+    meter_pct = max(0, min(100, round(candidate.similarity * 100)))
+    score_cell = (
+        '<td class="score-cell">'
+        f'<span class="score-num">{candidate.similarity:.2f}</span>'
+        f'<span class="meter"><span class="meter-fill" style="width:{meter_pct}%"></span></span>'
+        "</td>"
+    )
+
     return (
         f"<tr{row_class}>"
-        f"<td>{rank}</td>"
+        f'<td class="mono">{rank}</td>'
         f"<td>{html.escape(candidate.name)}</td>"
-        f"<td>{candidate.similarity:.2f}</td>"
+        f"{score_cell}"
         f"<td>{html.escape(','.join(candidate.sources))}</td>"
-        f"<td>{popularity}</td>"
-        f"<td>{lb_listeners}</td>"
-        f"<td>{last_release}</td>"
+        f'<td class="mono">{popularity}</td>'
+        f'<td class="mono">{lb_listeners}</td>'
+        f'<td class="mono">{last_release}</td>'
         f"<td>{status}</td>"
-        f"<td>{genres_cell}</td>"
+        f'<td class="genres-cell">{genres_cell}</td>'
         f'<td class="actions">{actions}</td>'
         "</tr>"
     )
