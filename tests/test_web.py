@@ -802,3 +802,61 @@ def test_config_page_falls_back_to_text_input_when_lidarr_unreachable(monkeypatc
     profile_row = next(r for r in rows if "LIDARR_QUALITY_PROFILE_ID" in r)
     assert 'name="LIDARR_QUALITY_PROFILE_ID"' in profile_row
     assert "<select" not in profile_row
+
+
+@respx.mock
+def test_test_lidarr_connection_reports_success(monkeypatch):
+    respx.get("http://lidarr.local/api/v1/system/status").mock(
+        return_value=httpx.Response(200, json={"version": "1.2.3.4"})
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/config/test-lidarr",
+        data={"LIDARR_URL": "http://lidarr.local", "LIDARR_API_KEY": "key"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Connected to Lidarr 1.2.3.4" in response.text
+
+
+@respx.mock
+def test_test_lidarr_connection_reports_failure(monkeypatch):
+    respx.get("http://lidarr.local/api/v1/system/status").mock(return_value=httpx.Response(401))
+
+    client = TestClient(app)
+    response = client.post(
+        "/config/test-lidarr",
+        data={"LIDARR_URL": "http://lidarr.local", "LIDARR_API_KEY": "wrong-key"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Could not connect to Lidarr" in response.text
+
+
+def test_test_lidarr_connection_requires_url_and_key():
+    client = TestClient(app)
+    response = client.post("/config/test-lidarr", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert "Set LIDARR_URL and LIDARR_API_KEY" in response.text
+
+
+@respx.mock
+def test_test_lidarr_connection_falls_back_to_saved_api_key_when_field_left_blank(monkeypatch):
+    monkeypatch.setenv("LIDARR_API_KEY", "saved-key")
+    respx.get("http://lidarr.local/api/v1/system/status").mock(
+        return_value=httpx.Response(200, json={"version": "1.2.3.4"})
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/config/test-lidarr",
+        data={"LIDARR_URL": "http://lidarr.local", "LIDARR_API_KEY": ""},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Connected to Lidarr 1.2.3.4" in response.text

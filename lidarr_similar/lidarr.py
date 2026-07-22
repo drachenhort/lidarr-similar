@@ -15,6 +15,13 @@ class LidarrClient:
             base_url=url.rstrip("/"), headers={"X-Api-Key": api_key}, timeout=30.0
         )
 
+    async def system_status(self) -> dict:
+        """Lidarr's own version/instance info - cheapest possible authenticated call,
+        used to verify a LIDARR_URL/LIDARR_API_KEY pair actually works."""
+        response = await self._http.get("/api/v1/system/status")
+        response.raise_for_status()
+        return response.json()
+
     async def existing_artist_names(self) -> set[str]:
         return {artist["artistName"] for artist in await self._fetch_artists()}
 

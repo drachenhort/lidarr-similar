@@ -124,6 +124,12 @@ set, instead of asking you to know the numeric IDs — Lidarr's UI only shows pr
 like "Standard", not their ID, which is an easy mistake to make by hand. Both are required:
 Lidarr's add-artist API rejects the request outright if the metadata profile is missing.
 
+A "Test Lidarr connection" button next to "Save configuration" checks whatever's
+currently in the LIDARR_URL/LIDARR_API_KEY fields (it doesn't need to be saved first)
+against Lidarr's `/api/v1/system/status` endpoint, and reports either the connected
+Lidarr version or the specific reason it failed (wrong URL, bad API key, unreachable
+host, etc.) - useful for catching a typo before running a full discovery.
+
 The index page itself shows the most recent discovery results (persisted in `STORE_PATH`
 so they survive restarts) and has a "Run discovery now" button. A full run can take a
 few minutes — Discogs enrichment alone is rate-limited to 60 requests/min and

@@ -4,6 +4,9 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+### Added
+- "Test Lidarr connection" button on `/config`, next to "Save configuration" - calls Lidarr's `/api/v1/system/status` and reports success (with the reported Lidarr version) or the specific failure reason, using whatever's currently in the LIDARR_URL/LIDARR_API_KEY fields (not necessarily saved yet, via `formaction`), falling back to the saved/env API key when that field is left blank. New `LidarrClient.system_status()` and `POST /config/test-lidarr`. Verified live against a real Lidarr instance.
+
 ## v0.1.0 - 2026-07-22
 
 ### Changed

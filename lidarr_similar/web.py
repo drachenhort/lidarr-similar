@@ -162,6 +162,8 @@ _BASE_STYLE = """
     button:disabled { color: var(--dim); border-color: var(--line); cursor: not-allowed; }
     .toolbar button[type="submit"]:not(:disabled) { background: var(--amber); border-color: var(--amber); color: var(--ink); font-weight: 600; }
     .toolbar button[type="submit"]:not(:disabled):hover { background: var(--paper); border-color: var(--paper); }
+    .test-button { border-color: var(--teal); color: var(--teal); margin-left: 0.6rem; }
+    .test-button:hover { background: var(--teal-soft); }
     .actions button { font-size: 0.78rem; margin-right: 0.35rem; padding: 0.3rem 0.55rem; }
 
     .in-library { color: var(--dim); }
@@ -336,6 +338,33 @@ async def save_config(request: Request) -> RedirectResponse:
     finally:
         settings.close()
     return RedirectResponse(f"/config?{urlencode({'message': 'Configuration saved.'})}", status_code=303)
+
+
+@app.post("/config/test-lidarr")
+async def test_lidarr_connection(request: Request) -> RedirectResponse:
+    """Verifies LIDARR_URL/LIDARR_API_KEY actually work, using whatever is currently in
+    the form fields (not necessarily saved yet) - falls back to the saved/env value for
+    the API key when left blank, same as save_config, since secret fields are never
+    pre-filled so an untouched field submits empty."""
+    form = await request.form()
+    url = (str(form.get("LIDARR_URL") or "")).strip() or get_effective("LIDARR_URL")
+    api_key = (str(form.get("LIDARR_API_KEY") or "")).strip() or get_effective("LIDARR_API_KEY")
+
+    if not url or not api_key:
+        query = urlencode({"error": "Set LIDARR_URL and LIDARR_API_KEY before testing the connection."})
+        return RedirectResponse(f"/config?{query}", status_code=303)
+
+    lidarr = LidarrClient(url, api_key)
+    try:
+        status = await lidarr.system_status()
+        version = status.get("version", "unknown version")
+        query = urlencode({"message": f"Connected to Lidarr {version} at {url}."})
+        return RedirectResponse(f"/config?{query}", status_code=303)
+    except Exception as error:  # noqa: BLE001 - surface any failure (auth, network, timeout) to the user
+        query = urlencode({"error": f"Could not connect to Lidarr: {_describe(error)}"})
+        return RedirectResponse(f"/config?{query}", status_code=303)
+    finally:
+        await lidarr.aclose()
 
 
 async def _fetch_lidarr_profiles() -> dict[str, list[dict]]:
@@ -696,7 +725,10 @@ def render_config_page(
       <tbody>{rows}</tbody>
     </table>
     </div>
-    <p><button type="submit">Save configuration</button></p>
+    <p>
+      <button type="submit">Save configuration</button>
+      <button type="submit" formaction="/config/test-lidarr" formnovalidate class="test-button">Test Lidarr connection</button>
+    </p>
   </form>
   <p class="hint">Secret fields (API keys, tokens) are never pre-filled or echoed back - leave one blank to keep its current value. CACHE_PATH/STORE_PATH are environment-only and can't be changed here.</p>
 </body>
