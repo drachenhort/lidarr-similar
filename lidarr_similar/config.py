@@ -13,8 +13,8 @@ class Config:
     discogs_token: str | None
     discogs_enabled: bool
     deezer_enabled: bool
-    lidarr_url: str
-    lidarr_api_key: str
+    lidarr_url: str | None
+    lidarr_api_key: str | None
     cache_path: str
 
     @classmethod
@@ -25,8 +25,8 @@ class Config:
             discogs_token=os.environ.get("DISCOGS_TOKEN"),
             discogs_enabled=os.environ.get("DISCOGS_ENABLED", "true").lower() == "true",
             deezer_enabled=os.environ.get("DEEZER_ENABLED", "true").lower() == "true",
-            lidarr_url=_require("LIDARR_URL"),
-            lidarr_api_key=_require("LIDARR_API_KEY"),
+            lidarr_url=os.environ.get("LIDARR_URL"),
+            lidarr_api_key=os.environ.get("LIDARR_API_KEY"),
             cache_path=os.environ.get("CACHE_PATH", "lidarr_similar.sqlite3"),
         )
 

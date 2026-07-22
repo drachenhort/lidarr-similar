@@ -33,8 +33,8 @@ pip install -r requirements-dev.txt   # includes runtime deps + pytest, respx
 |---|---|---|---|
 | `LASTFM_API_KEY` | yes | — | Last.fm API key |
 | `LASTFM_USERNAME` | yes | — | Last.fm username to read scrobbles from |
-| `LIDARR_URL` | yes | — | Base URL of your Lidarr instance, e.g. `http://localhost:8686` |
-| `LIDARR_API_KEY` | yes | — | Lidarr API key |
+| `LIDARR_URL` | for `python -m lidarr_similar` | — | Base URL of your Lidarr instance, e.g. `http://localhost:8686`. Optional for the preview tool (see below). |
+| `LIDARR_API_KEY` | for `python -m lidarr_similar` | — | Lidarr API key. Optional for the preview tool. |
 | `DISCOGS_TOKEN` | no | — | Discogs personal access token; enrichment is skipped if unset |
 | `DISCOGS_ENABLED` | no | `true` | Set to `false` to disable Discogs enrichment |
 | `DEEZER_ENABLED` | no | `true` | Set to `false` to disable the Deezer similarity source |
@@ -58,6 +58,37 @@ python -m lidarr_similar
 
 This prints discovered candidates (name, similarity score, contributing sources, Discogs
 genres) sorted by similarity. Artists already in your Lidarr library are skipped.
+
+### Preview mode
+
+To see what would be added without touching Lidarr at all, use the preview CLI:
+
+```bash
+python -m lidarr_similar.preview
+```
+
+It runs the same discovery pipeline and prints a ranked table:
+
+```
+  #  Artist              Score  Sources         Genres
+---------------------------------------------------------
+  1  Aphex Twin           1.00  lastfm,deezer   Electronic, IDM
+  2  Boards of Canada     0.87  lastfm          Electronic
+
+2 candidate(s) shown.
+```
+
+`LIDARR_URL` / `LIDARR_API_KEY` are optional here — if set, they're used only to filter
+out artists already in your library; if unset, every discovered candidate is shown.
+Options:
+
+```bash
+python -m lidarr_similar.preview --limit 10          # show fewer results
+python -m lidarr_similar.preview --no-deezer          # Last.fm only
+python -m lidarr_similar.preview --no-discogs          # skip genre enrichment
+python -m lidarr_similar.preview --no-lidarr           # ignore Lidarr even if configured
+python -m lidarr_similar.preview --help                # full option list
+```
 
 ## Development
 

@@ -15,6 +15,8 @@ from lidarr_similar.pipeline import discover_candidates
 
 async def run() -> None:
     config = Config.from_env()
+    if not config.lidarr_url or not config.lidarr_api_key:
+        raise RuntimeError("LIDARR_URL and LIDARR_API_KEY are required to run the full pipeline")
     cache = Cache(config.cache_path)
 
     lastfm = LastFmClient(config.lastfm_api_key)

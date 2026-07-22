@@ -5,6 +5,7 @@ All notable changes to this project are documented here, in reverse chronologica
 ## Unreleased
 
 ### Added
+- `python -m lidarr_similar.preview` — terminal preview CLI showing a ranked table of candidates (score, contributing sources, Discogs genres) without ever calling Lidarr's add-artist endpoint. Lidarr credentials are now optional; when unset, preview shows all candidates without library dedupe. Supports `--limit`, `--seed-artists`, `--similar-per-artist`, `--no-deezer`, `--no-discogs`, `--no-lidarr`.
 - Initial project scaffold: async, typed Python package (`lidarr_similar`) discovering artists similar to your Last.fm listening history and adding them to Lidarr.
 - `LastFmClient` — pulls top artists from scrobble history and Last.fm's `artist.getSimilar` candidates.
 - `DeezerClient` — second, independent similar-artist source via Deezer's public (unofficial) API; synthesizes a rank-decayed similarity score since Deezer has no numeric match value.
