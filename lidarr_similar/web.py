@@ -257,6 +257,7 @@ _SORT_KEYS = {
     "score": lambda c: (-c.similarity,),
     "deezer_fans": lambda c: (c.popularity is None, -(c.popularity or 0)),
     "lb_listeners": lambda c: (c.listenbrainz_listeners is None, -(c.listenbrainz_listeners or 0)),
+    "not_in_library": lambda c: (c.already_in_library, -c.similarity),
 }
 
 
@@ -551,6 +552,7 @@ _SORT_LABELS = {
     "score": "Similarity score",
     "deezer_fans": "Deezer fans",
     "lb_listeners": "LB listeners",
+    "not_in_library": "Not in library",
 }
 
 
