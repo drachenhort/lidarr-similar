@@ -159,9 +159,16 @@ panel instead, since it affects every artist in that genre at once.
 
 #### Docker / Unraid
 
-A prebuilt image is published at `ghcr.io/drachenhort/lidarr-similar:latest` - no need
-to clone the repo or build anything yourself. A `Dockerfile` and `docker-compose.yml`
-are also included if you'd rather build from source.
+A prebuilt image is published (publicly, no login required) at
+`ghcr.io/drachenhort/lidarr-similar:latest` - no need to clone the repo or build
+anything yourself:
+
+```bash
+docker pull ghcr.io/drachenhort/lidarr-similar:latest
+```
+
+A `Dockerfile` and `docker-compose.yml` are also included if you'd rather build from
+source.
 
 Using the published image with `docker compose` (default in `docker-compose.yml`):
 
