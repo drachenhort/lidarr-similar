@@ -1,6 +1,7 @@
 # lidarr-similar
 
-Discovers artists similar to your Last.fm listening history and adds them to Lidarr.
+Discovers artists similar to your Last.fm listening history - using Last.fm, Deezer, and
+ListenBrainz - and adds them to Lidarr.
 
 Candidates are gathered from Last.fm's `artist.getSimilar` and Deezer's related-artist
 data (artists found by both sources are boosted), then optionally enriched with Discogs
