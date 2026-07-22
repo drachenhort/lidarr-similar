@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from lidarr_similar.models import Candidate
-from lidarr_similar.preview import parse_args, print_table
+from lidarr_similar.preview import filter_by_min_score, parse_args, print_table
 
 
 def test_parse_args_defaults():
     args = parse_args([])
 
     assert args.limit == 25
+    assert args.min_score == 0.0
     assert args.seed_artists == 20
     assert args.similar_per_artist == 10
     assert args.no_deezer is False
@@ -16,11 +17,24 @@ def test_parse_args_defaults():
 
 
 def test_parse_args_overrides():
-    args = parse_args(["--limit", "5", "--no-deezer", "--no-lidarr"])
+    args = parse_args(["--limit", "5", "--min-score", "0.5", "--no-deezer", "--no-lidarr"])
 
     assert args.limit == 5
+    assert args.min_score == 0.5
     assert args.no_deezer is True
     assert args.no_lidarr is True
+
+
+def test_filter_by_min_score_drops_low_scores():
+    candidates = [
+        Candidate(name="High", similarity=0.8, sources=["lastfm"]),
+        Candidate(name="Borderline", similarity=0.5, sources=["lastfm"]),
+        Candidate(name="Low", similarity=0.3, sources=["lastfm"]),
+    ]
+
+    result = filter_by_min_score(candidates, 0.5)
+
+    assert [c.name for c in result] == ["High", "Borderline"]
 
 
 def test_print_table_handles_empty_candidates(capsys):
