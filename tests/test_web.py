@@ -184,6 +184,7 @@ async def test_run_discovery_persists_candidates_and_clears_running_flag(tmp_pat
         lidarr_api_key=None,
         lidarr_root_folder=None,
         lidarr_quality_profile_id=None,
+        lidarr_metadata_profile_id=None,
         cache_path=str(tmp_path / "cache.sqlite3"),
         store_path=str(tmp_path / "store.sqlite3"),
     )
@@ -234,6 +235,7 @@ async def test_run_discovery_continues_when_lidarr_fails(tmp_path, monkeypatch):
         lidarr_api_key="key",
         lidarr_root_folder=None,
         lidarr_quality_profile_id=None,
+        lidarr_metadata_profile_id=None,
         cache_path=str(tmp_path / "cache.sqlite3"),
         store_path=str(tmp_path / "store.sqlite3"),
     )
@@ -281,6 +283,7 @@ async def test_run_discovery_preserves_mid_run_ignore(tmp_path, monkeypatch):
         lidarr_api_key=None,
         lidarr_root_folder=None,
         lidarr_quality_profile_id=None,
+        lidarr_metadata_profile_id=None,
         cache_path=str(tmp_path / "cache.sqlite3"),
         store_path=str(tmp_path / "store.sqlite3"),
     )
@@ -448,6 +451,7 @@ def test_index_shows_add_button_when_config_saved_via_settings_store(tmp_path, m
     settings.set("LIDARR_API_KEY", "key")
     settings.set("LIDARR_ROOT_FOLDER", "/music")
     settings.set("LIDARR_QUALITY_PROFILE_ID", "3")
+    settings.set("LIDARR_METADATA_PROFILE_ID", "1")
     settings.close()
 
     client = TestClient(app)
@@ -465,6 +469,7 @@ def test_add_endpoint_marks_candidate_in_library_on_success(tmp_path, monkeypatc
     monkeypatch.setenv("LIDARR_API_KEY", "lidarr-key")
     monkeypatch.setenv("LIDARR_ROOT_FOLDER", "/music")
     monkeypatch.setenv("LIDARR_QUALITY_PROFILE_ID", "1")
+    monkeypatch.setenv("LIDARR_METADATA_PROFILE_ID", "1")
 
     store = CandidateStore(store_path)
     store.replace_all([Candidate(name="New Band", similarity=0.9, sources=["lastfm"])])
@@ -477,7 +482,7 @@ def test_add_endpoint_marks_candidate_in_library_on_success(tmp_path, monkeypatc
         async def lookup_artist(self, name):
             return {"artistName": name, "foreignArtistId": "abc"}
 
-        async def add_artist(self, candidate, root_folder, quality_profile_id):
+        async def add_artist(self, candidate, root_folder, quality_profile_id, metadata_profile_id):
             return None
 
         async def aclose(self):
@@ -624,6 +629,7 @@ async def test_run_discovery_flags_candidates_matching_ignored_genre(tmp_path, m
         lidarr_api_key=None,
         lidarr_root_folder=None,
         lidarr_quality_profile_id=None,
+        lidarr_metadata_profile_id=None,
         cache_path=str(tmp_path / "cache.sqlite3"),
         store_path=str(tmp_path / "store.sqlite3"),
     )
@@ -754,12 +760,35 @@ def test_config_page_shows_quality_profile_dropdown_when_lidarr_reachable(monkey
     respx.get("http://lidarr.local/api/v1/qualityprofile").mock(
         return_value=httpx.Response(200, json=[{"id": 1, "name": "Any"}, {"id": 3, "name": "Standard"}])
     )
+    respx.get("http://lidarr.local/api/v1/metadataprofile").mock(
+        return_value=httpx.Response(200, json=[{"id": 1, "name": "Standard"}])
+    )
 
     client = TestClient(app)
     response = client.get("/config")
 
     assert "<select" in response.text
     assert "Standard (id 3)" in response.text
+
+
+@respx.mock
+def test_config_page_shows_metadata_profile_dropdown_when_lidarr_reachable(monkeypatch):
+    monkeypatch.setenv("LIDARR_URL", "http://lidarr.local")
+    monkeypatch.setenv("LIDARR_API_KEY", "key")
+    respx.get("http://lidarr.local/api/v1/qualityprofile").mock(
+        return_value=httpx.Response(200, json=[{"id": 1, "name": "Any"}])
+    )
+    respx.get("http://lidarr.local/api/v1/metadataprofile").mock(
+        return_value=httpx.Response(200, json=[{"id": 1, "name": "Standard"}, {"id": 2, "name": "None"}])
+    )
+
+    client = TestClient(app)
+    response = client.get("/config")
+
+    rows = response.text.split("<tr>")
+    metadata_row = next(r for r in rows if "LIDARR_METADATA_PROFILE_ID" in r)
+    assert "<select" in metadata_row
+    assert "None (id 2)" in metadata_row
 
 
 def test_config_page_falls_back_to_text_input_when_lidarr_unreachable(monkeypatch):

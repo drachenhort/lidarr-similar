@@ -39,13 +39,23 @@ class LidarrClient:
         response.raise_for_status()
         return response.json()
 
+    async def metadata_profiles(self) -> list[dict]:
+        """Lidarr's configured metadata profiles ({"id": int, "name": str, ...}). Required
+        by /api/v1/artist alongside the quality profile - confirmed live: omitting it (or
+        leaving it 0) is rejected with "'Metadata Profile Id' must be greater than '0'"."""
+        response = await self._http.get("/api/v1/metadataprofile")
+        response.raise_for_status()
+        return response.json()
+
     async def lookup_artist(self, name: str) -> dict | None:
         response = await self._http.get("/api/v1/artist/lookup", params={"term": name})
         response.raise_for_status()
         results = response.json()
         return results[0] if results else None
 
-    async def add_artist(self, candidate: Candidate, root_folder: str, quality_profile_id: int) -> None:
+    async def add_artist(
+        self, candidate: Candidate, root_folder: str, quality_profile_id: int, metadata_profile_id: int
+    ) -> None:
         lookup = await self.lookup_artist(candidate.name)
         if lookup is None:
             return
@@ -53,6 +63,7 @@ class LidarrClient:
             **lookup,
             "rootFolderPath": root_folder,
             "qualityProfileId": quality_profile_id,
+            "metadataProfileId": metadata_profile_id,
             "monitored": True,
             "addOptions": {"searchForMissingAlbums": True},
         }

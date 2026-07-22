@@ -43,7 +43,8 @@ pip install -r requirements-dev.txt   # includes runtime deps + pytest, respx
 | `CACHE_PATH` | no | `lidarr_similar.sqlite3` | Path to the local SQLite cache used for enrichment lookups |
 | `STORE_PATH` | no | `lidarr_similar_store.sqlite3` | Path to the SQLite store the web UI persists discovery results and the ignore list in |
 | `LIDARR_ROOT_FOLDER` | for the web UI's "Add to Lidarr" button | — | Root folder path Lidarr should use for newly added artists, e.g. `/music` |
-| `LIDARR_QUALITY_PROFILE_ID` | for the web UI's "Add to Lidarr" button | — | Numeric quality profile ID from Lidarr's Settings → Profiles |
+| `LIDARR_QUALITY_PROFILE_ID` | for the web UI's "Add to Lidarr" button | — | Numeric quality profile ID from Lidarr's Settings → Profiles (set via `/config`'s dropdown, not by hand) |
+| `LIDARR_METADATA_PROFILE_ID` | for the web UI's "Add to Lidarr" button | — | Numeric metadata profile ID; Lidarr's add-artist API rejects the request without one (set via `/config`'s dropdown) |
 
 Example:
 
@@ -107,7 +108,7 @@ uvicorn lidarr_similar.web:app --host 0.0.0.0 --port 8000
 
 Open `http://localhost:8000`. A "⚙ Configuration status" link at the top goes to
 `/config`, an editable settings page — for LASTFM_API_KEY, LASTFM_USERNAME, DISCOGS_TOKEN,
-the DISCOGS/DEEZER/LISTENBRAINZ enabled toggles, and all four LIDARR_* variables, you can
+the DISCOGS/DEEZER/LISTENBRAINZ enabled toggles, and all five LIDARR_* variables, you can
 enter values directly in the browser and click "Save configuration" instead of restarting
 the container with different environment variables. Saved values are stored in `STORE_PATH`
 (SQLite) and take priority over the equivalent environment variable when both are set.
@@ -117,10 +118,11 @@ settings live.
 The page also shows, for every variable, whether it's set, whether it's valid where
 checkable, and what feature it's needed for — secret values (API keys, tokens) are never
 shown or pre-filled, only their presence; leave a secret field blank to keep its current
-value. `LIDARR_QUALITY_PROFILE_ID` is a dropdown of your Lidarr instance's actual quality
-profiles (fetched live) once `LIDARR_URL`/`LIDARR_API_KEY` are set, instead of asking you
-to know the numeric ID — Lidarr's UI only shows profile names like "Standard", not their
-ID, which is an easy mistake to make by hand.
+value. `LIDARR_QUALITY_PROFILE_ID` and `LIDARR_METADATA_PROFILE_ID` are dropdowns of your
+Lidarr instance's actual profiles (fetched live) once `LIDARR_URL`/`LIDARR_API_KEY` are
+set, instead of asking you to know the numeric IDs — Lidarr's UI only shows profile names
+like "Standard", not their ID, which is an easy mistake to make by hand. Both are required:
+Lidarr's add-artist API rejects the request outright if the metadata profile is missing.
 
 The index page itself shows the most recent discovery results (persisted in `STORE_PATH`
 so they survive restarts) and has a "Run discovery now" button. A full run can take a

@@ -46,6 +46,22 @@ def test_from_env_quality_profile_id_defaults_to_none(monkeypatch):
     assert config.lidarr_quality_profile_id is None
 
 
+def test_from_env_parses_numeric_metadata_profile_id(monkeypatch):
+    monkeypatch.setenv("LIDARR_METADATA_PROFILE_ID", "1")
+
+    config = Config.from_env()
+
+    assert config.lidarr_metadata_profile_id == 1
+
+
+def test_from_env_treats_non_numeric_metadata_profile_id_as_unset(monkeypatch):
+    monkeypatch.setenv("LIDARR_METADATA_PROFILE_ID", "Standard")
+
+    config = Config.from_env()
+
+    assert config.lidarr_metadata_profile_id is None
+
+
 def test_describe_config_flags_missing_required_vars(monkeypatch):
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
 

@@ -26,6 +26,7 @@ OVERRIDABLE_KEYS = (
     "LIDARR_API_KEY",
     "LIDARR_ROOT_FOLDER",
     "LIDARR_QUALITY_PROFILE_ID",
+    "LIDARR_METADATA_PROFILE_ID",
 )
 
 SECRET_KEYS = ("LASTFM_API_KEY", "DISCOGS_TOKEN", "LIDARR_API_KEY")
@@ -43,6 +44,7 @@ class Config:
     lidarr_api_key: str | None
     lidarr_root_folder: str | None
     lidarr_quality_profile_id: int | None
+    lidarr_metadata_profile_id: int | None
     cache_path: str
     store_path: str
 
@@ -50,6 +52,7 @@ class Config:
     def from_env(cls) -> "Config":
         overrides = _load_overrides()
         quality_profile_id = _get(overrides, "LIDARR_QUALITY_PROFILE_ID")
+        metadata_profile_id = _get(overrides, "LIDARR_METADATA_PROFILE_ID")
         return cls(
             lastfm_api_key=_require(overrides, "LASTFM_API_KEY"),
             lastfm_username=_require(overrides, "LASTFM_USERNAME"),
@@ -61,6 +64,7 @@ class Config:
             lidarr_api_key=_get(overrides, "LIDARR_API_KEY"),
             lidarr_root_folder=_get(overrides, "LIDARR_ROOT_FOLDER"),
             lidarr_quality_profile_id=_parse_int(quality_profile_id),
+            lidarr_metadata_profile_id=_parse_int(metadata_profile_id),
             cache_path=os.environ.get("CACHE_PATH", "lidarr_similar.sqlite3"),
             store_path=os.environ.get("STORE_PATH", "lidarr_similar_store.sqlite3"),
         )
@@ -132,6 +136,8 @@ def describe_config() -> list[ConfigItem]:
 
     quality_profile_id_raw = _get(overrides, "LIDARR_QUALITY_PROFILE_ID")
     quality_profile_valid = _parse_int(quality_profile_id_raw) is not None if quality_profile_id_raw else True
+    metadata_profile_id_raw = _get(overrides, "LIDARR_METADATA_PROFILE_ID")
+    metadata_profile_valid = _parse_int(metadata_profile_id_raw) is not None if metadata_profile_id_raw else True
 
     def item(name: str, required_for: str, **kwargs) -> ConfigItem:
         value = _get(overrides, name)
@@ -175,6 +181,13 @@ def describe_config() -> list[ConfigItem]:
             valid=quality_profile_valid,
             note=None if quality_profile_valid else "set, but not a number - must be the profile's numeric ID, not its name",
             value_preview=quality_profile_id_raw,
+        ),
+        item(
+            "LIDARR_METADATA_PROFILE_ID",
+            "Add to Lidarr button",
+            valid=metadata_profile_valid,
+            note=None if metadata_profile_valid else "set, but not a number - must be the profile's numeric ID, not its name",
+            value_preview=metadata_profile_id_raw,
         ),
         ConfigItem(
             "CACHE_PATH",

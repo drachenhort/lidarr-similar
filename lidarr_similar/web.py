@@ -118,9 +118,16 @@ def _describe(error: Exception) -> str:
 def _is_lidarr_add_enabled() -> bool:
     """Whether every value the Add to Lidarr button needs is both present and valid -
     via describe_config() rather than raw os.environ, so a UI-saved override (SettingsStore)
-    counts, and an invalid LIDARR_QUALITY_PROFILE_ID (e.g. a profile name, not its ID)
-    correctly disables the button instead of being treated as merely "truthy"."""
-    required = {"LIDARR_URL", "LIDARR_API_KEY", "LIDARR_ROOT_FOLDER", "LIDARR_QUALITY_PROFILE_ID"}
+    counts, and an invalid LIDARR_QUALITY_PROFILE_ID/LIDARR_METADATA_PROFILE_ID (e.g. a
+    profile name, not its ID) correctly disables the button instead of being treated as
+    merely "truthy"."""
+    required = {
+        "LIDARR_URL",
+        "LIDARR_API_KEY",
+        "LIDARR_ROOT_FOLDER",
+        "LIDARR_QUALITY_PROFILE_ID",
+        "LIDARR_METADATA_PROFILE_ID",
+    }
     items = {item.name: item for item in describe_config() if item.name in required}
     return all(item.present and item.valid for item in items.values())
 
@@ -164,8 +171,8 @@ async def index(min_score: float = 0.0, page: int = 1, message: str | None = Non
 
 @app.get("/config", response_class=HTMLResponse)
 async def config_status(message: str | None = None, error: str | None = None) -> str:
-    quality_profiles = await _fetch_quality_profiles()
-    return render_config_page(describe_config(), quality_profiles, message, error)
+    profiles = await _fetch_lidarr_profiles()
+    return render_config_page(describe_config(), profiles, message, error)
 
 
 @app.post("/config")
@@ -187,17 +194,20 @@ async def save_config(request: Request) -> RedirectResponse:
     return RedirectResponse(f"/config?{urlencode({'message': 'Configuration saved.'})}", status_code=303)
 
 
-async def _fetch_quality_profiles() -> list[dict] | None:
-    """Live quality-profile list for the dropdown, or None if Lidarr isn't reachable yet -
+async def _fetch_lidarr_profiles() -> dict[str, list[dict]]:
+    """Live quality- and metadata-profile lists for the config page's dropdowns, keyed by
+    the env var each one fills in. Missing/unreachable Lidarr just yields empty lists -
     the form falls back to a plain numeric input in that case."""
     url, api_key = get_effective("LIDARR_URL"), get_effective("LIDARR_API_KEY")
     if not url or not api_key:
-        return None
+        return {"LIDARR_QUALITY_PROFILE_ID": [], "LIDARR_METADATA_PROFILE_ID": []}
     lidarr = LidarrClient(url, api_key)
     try:
-        return await lidarr.quality_profiles()
-    except Exception:  # noqa: BLE001 - best-effort; any failure just falls back to a text input
-        return None
+        quality = await lidarr.quality_profiles()
+        metadata = await lidarr.metadata_profiles()
+        return {"LIDARR_QUALITY_PROFILE_ID": quality, "LIDARR_METADATA_PROFILE_ID": metadata}
+    except Exception:  # noqa: BLE001 - best-effort; any failure just falls back to text inputs
+        return {"LIDARR_QUALITY_PROFILE_ID": [], "LIDARR_METADATA_PROFILE_ID": []}
     finally:
         await lidarr.aclose()
 
@@ -283,9 +293,15 @@ async def unignore_genre(genre: str = Form(...)) -> RedirectResponse:
 @app.post("/add")
 async def add(name: str = Form(...)) -> RedirectResponse:
     config = Config.from_env()
-    if not (config.lidarr_url and config.lidarr_api_key and config.lidarr_root_folder and config.lidarr_quality_profile_id):
+    if not (
+        config.lidarr_url
+        and config.lidarr_api_key
+        and config.lidarr_root_folder
+        and config.lidarr_quality_profile_id
+        and config.lidarr_metadata_profile_id
+    ):
         return RedirectResponse(
-            f"/?{urlencode({'error': 'Lidarr is not fully configured (URL/API key/root folder/quality profile).'})}",
+            f"/?{urlencode({'error': 'Lidarr is not fully configured (URL/API key/root folder/quality profile/metadata profile).'})}",
             status_code=303,
         )
 
@@ -296,7 +312,10 @@ async def add(name: str = Form(...)) -> RedirectResponse:
             not_found_message = f"{name} was not found in Lidarr's catalog search."
             return RedirectResponse(f"/?{urlencode({'error': not_found_message})}", status_code=303)
         await lidarr.add_artist(
-            Candidate(name=name, similarity=0.0), config.lidarr_root_folder, config.lidarr_quality_profile_id
+            Candidate(name=name, similarity=0.0),
+            config.lidarr_root_folder,
+            config.lidarr_quality_profile_id,
+            config.lidarr_metadata_profile_id,
         )
     except Exception as error:  # noqa: BLE001 - surfaced to the UI, not swallowed
         return RedirectResponse(f"/?{urlencode({'error': f'Failed to add {name}: {_describe(error)}'})}", status_code=303)
@@ -448,8 +467,8 @@ def render_page(
     lidarr_note = (
         ""
         if lidarr_add_enabled
-        else '<p class="hint">Set LIDARR_URL, LIDARR_API_KEY, LIDARR_ROOT_FOLDER and '
-        "LIDARR_QUALITY_PROFILE_ID to enable one-click adds.</p>"
+        else '<p class="hint">Set LIDARR_URL, LIDARR_API_KEY, LIDARR_ROOT_FOLDER, '
+        "LIDARR_QUALITY_PROFILE_ID and LIDARR_METADATA_PROFILE_ID (via /config) to enable one-click adds.</p>"
     )
     return f"""<!doctype html>
 <html>
@@ -481,11 +500,11 @@ def render_page(
 
 def render_config_page(
     items: list[ConfigItem],
-    quality_profiles: list[dict] | None,
+    profiles: dict[str, list[dict]],
     message: str | None,
     error: str | None,
 ) -> str:
-    rows = "".join(_render_config_row(item, quality_profiles) for item in items)
+    rows = "".join(_render_config_row(item, profiles) for item in items)
     all_required_present = all(item.present for item in items if item.required_for == "core discovery pipeline")
     summary = (
         '<p class="banner ok">Core discovery pipeline is configured (Last.fm credentials present).</p>'
@@ -522,7 +541,7 @@ def render_config_page(
 </html>"""
 
 
-def _render_config_row(item: ConfigItem, quality_profiles: list[dict] | None) -> str:
+def _render_config_row(item: ConfigItem, profiles: dict[str, list[dict]]) -> str:
     if not item.present:
         status = '<span class="status-missing">not set</span>'
     elif not item.valid:
@@ -533,7 +552,7 @@ def _render_config_row(item: ConfigItem, quality_profiles: list[dict] | None) ->
         status += f'<br><span class="hint">from {html.escape(item.source)}</span>'
     note_html = f"<br><span class=\"hint\">{html.escape(item.note)}</span>" if item.note else ""
 
-    input_html = _render_config_input(item, quality_profiles)
+    input_html = _render_config_input(item, profiles)
 
     return (
         "<tr>"
@@ -548,19 +567,22 @@ def _render_config_row(item: ConfigItem, quality_profiles: list[dict] | None) ->
 _BOOLEAN_KEYS = {"DISCOGS_ENABLED", "DEEZER_ENABLED", "LISTENBRAINZ_ENABLED"}
 
 
-def _render_config_input(item: ConfigItem, quality_profiles: list[dict] | None) -> str:
+_PROFILE_KEYS = {"LIDARR_QUALITY_PROFILE_ID", "LIDARR_METADATA_PROFILE_ID"}
+
+
+def _render_config_input(item: ConfigItem, profiles: dict[str, list[dict]]) -> str:
     if not item.editable:
         value = html.escape(item.value_preview) if item.value_preview else "-"
         return f"{value} <span class=\"hint\">(env-only)</span>"
 
     name_attr = html.escape(item.name, quote=True)
 
-    if item.name == "LIDARR_QUALITY_PROFILE_ID" and quality_profiles:
+    if item.name in _PROFILE_KEYS and profiles.get(item.name):
         current = item.value_preview
         options = "".join(
             f'<option value="{profile["id"]}"{" selected" if str(profile["id"]) == current else ""}>'
             f'{html.escape(profile["name"])} (id {profile["id"]})</option>'
-            for profile in quality_profiles
+            for profile in profiles[item.name]
         )
         return f'<select name="{name_attr}"><option value="">-- choose --</option>{options}</select>'
 
