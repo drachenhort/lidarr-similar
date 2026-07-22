@@ -58,18 +58,29 @@ class DiscogsEnricher:
 
     async def _fetch_genre_style(self, artist_name: str) -> dict:
         """Discogs artist objects carry no genre/style; those only exist on releases,
-        so look up the artist's releases and take the genre/style of the first match."""
+        so look up the artist's releases, newest first, and take the top match's
+        genre/style/year. The year is a best-effort "last release" signal - it
+        reflects a specific pressing's catalog year, not necessarily an original
+        release date, but is the closest Discogs offers without per-release lookups.
+        """
         response = await self._http.get(
             "/database/search",
-            params={"artist": artist_name, "type": "release", "token": self._token},
+            params={
+                "artist": artist_name,
+                "type": "release",
+                "sort": "year",
+                "sort_order": "desc",
+                "token": self._token,
+            },
         )
         response.raise_for_status()
         results = response.json().get("results", [])
         if not results:
-            return {"discogs_genres": [], "discogs_styles": []}
+            return {"discogs_genres": [], "discogs_styles": [], "discogs_latest_release_year": None}
         return {
             "discogs_genres": results[0].get("genre", []),
             "discogs_styles": results[0].get("style", []),
+            "discogs_latest_release_year": results[0].get("year") or None,
         }
 
     async def aclose(self) -> None:
@@ -80,4 +91,5 @@ def _apply(candidate: Candidate, metadata: dict) -> Candidate:
     candidate.discogs_id = metadata.get("discogs_id")
     candidate.discogs_genres = metadata.get("discogs_genres", [])
     candidate.discogs_styles = metadata.get("discogs_styles", [])
+    candidate.discogs_latest_release_year = metadata.get("discogs_latest_release_year")
     return candidate

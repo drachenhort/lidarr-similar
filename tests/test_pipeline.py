@@ -22,7 +22,7 @@ async def test_discover_candidates_dedupes_and_sorts_by_similarity():
     assert next(c for c in candidates if c.name == "X").similarity == 0.8
 
 
-async def test_discover_candidates_skips_existing_lidarr_artists():
+async def test_discover_candidates_flags_existing_lidarr_artists_instead_of_dropping():
     lastfm = AsyncMock()
     lastfm.top_artists.return_value = ["Seed A"]
     lastfm.similar_artists.return_value = [
@@ -34,10 +34,13 @@ async def test_discover_candidates_skips_existing_lidarr_artists():
         lastfm, username="user", discogs=None, existing_artist_names={"Already Have"}
     )
 
-    assert [c.name for c in candidates] == ["New Artist"]
+    assert {c.name: c.already_in_library for c in candidates} == {
+        "Already Have": True,
+        "New Artist": False,
+    }
 
 
-async def test_discover_candidates_skips_existing_artists_ignoring_case_and_diacritics():
+async def test_discover_candidates_flags_existing_artists_ignoring_case_and_diacritics():
     lastfm = AsyncMock()
     lastfm.top_artists.return_value = ["Seed A"]
     lastfm.similar_artists.return_value = [
@@ -49,7 +52,10 @@ async def test_discover_candidates_skips_existing_artists_ignoring_case_and_diac
         lastfm, username="user", discogs=None, existing_artist_names={"L'Âme Immortelle"}
     )
 
-    assert [c.name for c in candidates] == ["New Artist"]
+    flagged = next(c for c in candidates if c.name == "l'âme immortelle")
+    unflagged = next(c for c in candidates if c.name == "New Artist")
+    assert flagged.already_in_library is True
+    assert unflagged.already_in_library is False
 
 
 async def test_discover_candidates_applies_discogs_enrichment():

@@ -16,7 +16,14 @@ def test_store_replace_all_persists_and_sorts_by_similarity(tmp_path):
     store.replace_all(
         [
             Candidate(name="Low", similarity=0.3, sources=["lastfm"]),
-            Candidate(name="High", similarity=0.9, sources=["lastfm", "deezer"], discogs_genres=["Electronic"]),
+            Candidate(
+                name="High",
+                similarity=0.9,
+                sources=["lastfm", "deezer"],
+                discogs_genres=["Electronic"],
+                discogs_latest_release_year="2024",
+                already_in_library=True,
+            ),
         ]
     )
 
@@ -25,6 +32,9 @@ def test_store_replace_all_persists_and_sorts_by_similarity(tmp_path):
     assert [c.name for c in loaded] == ["High", "Low"]
     assert loaded[0].discogs_genres == ["Electronic"]
     assert loaded[0].sources == ["lastfm", "deezer"]
+    assert loaded[0].discogs_latest_release_year == "2024"
+    assert loaded[0].already_in_library is True
+    assert loaded[1].already_in_library is False
     assert store.last_updated() is not None
 
 

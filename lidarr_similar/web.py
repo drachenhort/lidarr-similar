@@ -121,7 +121,10 @@ def render_page(
     body = "<p>No candidates to show.</p>" if not candidates else f"""
     <table>
       <thead>
-        <tr><th>#</th><th>Artist</th><th>Score</th><th>Sources</th><th>Genres</th></tr>
+        <tr>
+          <th>#</th><th>Artist</th><th>Score</th><th>Sources</th>
+          <th>Last Release</th><th>In Library</th><th>Genres</th>
+        </tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
@@ -150,6 +153,8 @@ def render_page(
     th {{ background: #f5f5f5; }}
     form {{ display: inline; }}
     .toolbar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }}
+    .in-library {{ color: #888; }}
+    .badge {{ background: #eef; color: #33a; border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.85em; }}
   </style>
 </head>
 <body>
@@ -168,12 +173,17 @@ def render_page(
 
 def _render_row(rank: int, candidate: Candidate) -> str:
     genres = ", ".join(candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else []))
+    last_release = html.escape(candidate.discogs_latest_release_year) if candidate.discogs_latest_release_year else "-"
+    in_library = '<span class="badge">already in library</span>' if candidate.already_in_library else "-"
+    row_class = ' class="in-library"' if candidate.already_in_library else ""
     return (
-        "<tr>"
+        f"<tr{row_class}>"
         f"<td>{rank}</td>"
         f"<td>{html.escape(candidate.name)}</td>"
         f"<td>{candidate.similarity:.2f}</td>"
         f"<td>{html.escape(','.join(candidate.sources))}</td>"
+        f"<td>{last_release}</td>"
+        f"<td>{in_library}</td>"
         f"<td>{html.escape(genres) or '-'}</td>"
         "</tr>"
     )

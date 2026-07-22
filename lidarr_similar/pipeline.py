@@ -1,8 +1,11 @@
-"""Discovery pipeline: seed artists -> similarity sources -> merge -> enrichment -> dedupe.
+"""Discovery pipeline: seed artists -> similarity sources -> merge -> enrichment -> library check.
 
 Last.fm and Deezer are independent, equally-weighted candidate sources.
 Discogs and Deezer-genre enrichment are optional and non-blocking; they only
 augment metadata on candidates already produced by the similarity sources.
+Artists already in the Lidarr library are kept in the results and flagged via
+`Candidate.already_in_library` rather than dropped, so the UI can surface a
+notice instead of silently hiding them.
 """
 
 from __future__ import annotations
@@ -43,7 +46,9 @@ async def discover_candidates(
 
     merged = merge_candidates(candidate_lists)
     existing_normalized = {normalize_name(name) for name in existing_artist_names}
-    candidates = [c for c in merged.values() if normalize_name(c.name) not in existing_normalized]
+    candidates = list(merged.values())
+    for candidate in candidates:
+        candidate.already_in_library = normalize_name(candidate.name) in existing_normalized
 
     if discogs is not None:
         candidates = [await discogs.enrich(c) for c in candidates]

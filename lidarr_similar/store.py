@@ -23,7 +23,9 @@ class CandidateStore:
                 discogs_id INTEGER,
                 discogs_genres TEXT NOT NULL,
                 discogs_styles TEXT NOT NULL,
+                discogs_latest_release_year TEXT,
                 deezer_genre TEXT,
+                already_in_library INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL
             )
             """
@@ -37,8 +39,9 @@ class CandidateStore:
         self._conn.executemany(
             """
             INSERT INTO candidates
-                (name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles, deezer_genre, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles,
+                 discogs_latest_release_year, deezer_genre, already_in_library, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -49,7 +52,9 @@ class CandidateStore:
                     c.discogs_id,
                     json.dumps(c.discogs_genres),
                     json.dumps(c.discogs_styles),
+                    c.discogs_latest_release_year,
                     c.deezer_genre,
+                    int(c.already_in_library),
                     now,
                 )
                 for c in candidates
@@ -59,7 +64,8 @@ class CandidateStore:
 
     def load_all(self) -> list[Candidate]:
         rows = self._conn.execute(
-            "SELECT name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles, deezer_genre "
+            "SELECT name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles, "
+            "discogs_latest_release_year, deezer_genre, already_in_library "
             "FROM candidates ORDER BY similarity DESC"
         ).fetchall()
         return [
@@ -71,7 +77,9 @@ class CandidateStore:
                 discogs_id=row[4],
                 discogs_genres=json.loads(row[5]),
                 discogs_styles=json.loads(row[6]),
-                deezer_genre=row[7],
+                discogs_latest_release_year=row[7],
+                deezer_genre=row[8],
+                already_in_library=bool(row[9]),
             )
             for row in rows
         ]

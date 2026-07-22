@@ -27,22 +27,25 @@ def mock_artist_search(artist_id: int = 42, title: str = "Boards of Canada"):
     )
 
 
-def mock_release_search(genres: list[str], styles: list[str]):
+def mock_release_search(genres: list[str], styles: list[str], year: str | None = None):
     return respx.get(SEARCH_URL, params={"type": "release"}).mock(
-        return_value=httpx.Response(200, json={"results": [{"genre": genres, "style": styles}]})
+        return_value=httpx.Response(
+            200, json={"results": [{"genre": genres, "style": styles, "year": year}]}
+        )
     )
 
 
 @respx.mock
 async def test_enrich_exact_match(enricher: DiscogsEnricher):
     mock_artist_search()
-    mock_release_search(genres=["Electronic"], styles=["IDM"])
+    mock_release_search(genres=["Electronic"], styles=["IDM"], year="2025")
 
     candidate = await enricher.enrich(Candidate(name="Boards of Canada", similarity=0.9))
 
     assert candidate.discogs_id == 42
     assert candidate.discogs_genres == ["Electronic"]
     assert candidate.discogs_styles == ["IDM"]
+    assert candidate.discogs_latest_release_year == "2025"
 
 
 @respx.mock

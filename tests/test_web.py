@@ -37,7 +37,15 @@ def test_index_lists_stored_candidates(tmp_path, monkeypatch):
     monkeypatch.setenv("STORE_PATH", str(store_path))
     store = CandidateStore(store_path)
     store.replace_all(
-        [Candidate(name="VNV Nation", similarity=0.9, sources=["lastfm", "deezer"], deezer_genre="Electro")]
+        [
+            Candidate(
+                name="VNV Nation",
+                similarity=0.9,
+                sources=["lastfm", "deezer"],
+                deezer_genre="Electro",
+                discogs_latest_release_year="2025",
+            )
+        ]
     )
     store.close()
 
@@ -46,7 +54,30 @@ def test_index_lists_stored_candidates(tmp_path, monkeypatch):
 
     assert "VNV Nation" in response.text
     assert "Electro" in response.text
+    assert "2025" in response.text
     assert "Last updated:" in response.text
+
+
+def test_index_shows_already_in_library_notice(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all(
+        [
+            Candidate(name="Known Artist", similarity=0.9, sources=["lastfm"], already_in_library=True),
+            Candidate(name="New Artist", similarity=0.8, sources=["lastfm"], already_in_library=False),
+        ]
+    )
+    store.close()
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    rows = response.text.split("<tr")
+    known_row = next(row for row in rows if "Known Artist" in row)
+    new_row = next(row for row in rows if "New Artist" in row)
+    assert "already in library" in known_row
+    assert "already in library" not in new_row
 
 
 def test_index_filters_by_min_score(tmp_path, monkeypatch):
@@ -68,7 +99,8 @@ def test_index_filters_by_min_score(tmp_path, monkeypatch):
     assert "Low" not in response.text
 
 
-def test_index_shows_running_banner_and_disables_button():
+def test_index_shows_running_banner_and_disables_button(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORE_PATH", str(tmp_path / "store.sqlite3"))
     web._status.running = True
     client = TestClient(app)
 
@@ -78,7 +110,8 @@ def test_index_shows_running_banner_and_disables_button():
     assert "disabled" in response.text
 
 
-def test_index_shows_error_banner_after_failed_run():
+def test_index_shows_error_banner_after_failed_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORE_PATH", str(tmp_path / "store.sqlite3"))
     web._status.error = "boom"
     client = TestClient(app)
 

@@ -46,29 +46,41 @@ def test_filter_by_min_score_drops_low_scores():
 
 
 def test_print_table_handles_empty_candidates(capsys):
-    print_table([], dedupe_active=True)
+    print_table([], library_check_active=True)
 
     assert "No candidates found." in capsys.readouterr().out
 
 
 def test_print_table_lists_candidates_with_sources_and_genres(capsys):
     candidates = [
-        Candidate(name="Boards of Canada", similarity=0.95, sources=["lastfm", "deezer"], discogs_genres=["Electronic"]),
-        Candidate(name="Aphex Twin", similarity=0.8, sources=["deezer"]),
+        Candidate(
+            name="Boards of Canada",
+            similarity=0.95,
+            sources=["lastfm", "deezer"],
+            discogs_genres=["Electronic"],
+            discogs_latest_release_year="2022",
+        ),
+        Candidate(name="Aphex Twin", similarity=0.8, sources=["deezer"], already_in_library=True),
     ]
 
-    print_table(candidates, dedupe_active=True)
+    print_table(candidates, library_check_active=True)
     output = capsys.readouterr().out
 
     assert "Boards of Canada" in output
     assert "lastfm,deezer" in output
     assert "Electronic" in output
+    assert "2022" in output
     assert "Aphex Twin" in output
     assert "2 candidate(s) shown." in output
     assert "Note:" not in output
+    # "In Library" column: Boards of Canada is not in library, Aphex Twin is
+    boards_line = next(line for line in output.splitlines() if "Boards of Canada" in line)
+    aphex_line = next(line for line in output.splitlines() if "Aphex Twin" in line)
+    assert "yes" not in boards_line
+    assert "yes" in aphex_line
 
 
-def test_print_table_warns_when_dedupe_skipped(capsys):
-    print_table([Candidate(name="X", similarity=0.5, sources=["lastfm"])], dedupe_active=False)
+def test_print_table_warns_when_library_check_inactive(capsys):
+    print_table([Candidate(name="X", similarity=0.5, sources=["lastfm"])], library_check_active=False)
 
-    assert "dedupe was skipped" in capsys.readouterr().out
+    assert 'no Lidarr connection' in capsys.readouterr().out

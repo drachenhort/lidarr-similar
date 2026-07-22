@@ -77,7 +77,7 @@ async def run(argv: list[str] | None = None) -> None:
         )
         min_score = 0.0 if args.no_min_score else args.min_score
         candidates = filter_by_min_score(candidates, min_score)
-        print_table(candidates[: args.limit], dedupe_active=lidarr is not None)
+        print_table(candidates[: args.limit], library_check_active=lidarr is not None)
     finally:
         await lastfm.aclose()
         if deezer is not None:
@@ -93,7 +93,7 @@ def filter_by_min_score(candidates: list[Candidate], min_score: float) -> list[C
     return [c for c in candidates if c.similarity >= min_score]
 
 
-def print_table(candidates: list[Candidate], dedupe_active: bool) -> None:
+def print_table(candidates: list[Candidate], library_check_active: bool) -> None:
     if not candidates:
         print("No candidates found.")
         return
@@ -101,22 +101,27 @@ def print_table(candidates: list[Candidate], dedupe_active: bool) -> None:
     name_width = max(len(c.name) for c in candidates)
     name_width = max(name_width, len("Artist"))
 
-    header = f"{'#':>3}  {'Artist':<{name_width}}  {'Score':>5}  {'Sources':<14}  Genres"
+    header = (
+        f"{'#':>3}  {'Artist':<{name_width}}  {'Score':>5}  {'Sources':<14}  "
+        f"{'Last Release':<12}  {'In Library':<10}  Genres"
+    )
     print(header)
     print("-" * len(header))
 
     for rank, candidate in enumerate(candidates, start=1):
         sources = ",".join(candidate.sources) or "-"
         genres = ", ".join(candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else [])) or "-"
+        last_release = candidate.discogs_latest_release_year or "-"
+        in_library = "yes" if candidate.already_in_library else "-"
         print(
             f"{rank:>3}  {candidate.name:<{name_width}}  {candidate.similarity:>5.2f}  "
-            f"{sources:<14}  {genres}"
+            f"{sources:<14}  {last_release:<12}  {in_library:<10}  {genres}"
         )
 
     print()
     print(f"{len(candidates)} candidate(s) shown.")
-    if not dedupe_active:
-        print("Note: Lidarr dedupe was skipped, this list may include artists already in your library.")
+    if not library_check_active:
+        print("Note: no Lidarr connection, so \"In Library\" could not be checked for any candidate.")
 
 
 if __name__ == "__main__":
