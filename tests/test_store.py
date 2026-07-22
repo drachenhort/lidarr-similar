@@ -23,6 +23,7 @@ def test_store_replace_all_persists_and_sorts_by_similarity(tmp_path):
                 discogs_genres=["Electronic"],
                 discogs_latest_release_year="2024",
                 already_in_library=True,
+                popularity=46417,
             ),
         ]
     )
@@ -35,6 +36,8 @@ def test_store_replace_all_persists_and_sorts_by_similarity(tmp_path):
     assert loaded[0].discogs_latest_release_year == "2024"
     assert loaded[0].already_in_library is True
     assert loaded[1].already_in_library is False
+    assert loaded[0].popularity == 46417
+    assert loaded[1].popularity is None
     assert store.last_updated() is not None
 
 

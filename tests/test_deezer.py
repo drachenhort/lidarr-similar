@@ -43,7 +43,7 @@ async def test_similar_artists_returns_empty_when_artist_not_found():
 @respx.mock
 async def test_enrich_genre_resolves_via_top_album():
     respx.get("https://api.deezer.com/search/artist").mock(
-        return_value=httpx.Response(200, json={"data": [{"id": 3821, "name": "VNV Nation"}]})
+        return_value=httpx.Response(200, json={"data": [{"id": 3821, "name": "VNV Nation", "nb_fan": 46417}]})
     )
     respx.get("https://api.deezer.com/artist/3821/albums").mock(
         return_value=httpx.Response(200, json={"data": [{"genre_id": 106}]})
@@ -55,6 +55,22 @@ async def test_enrich_genre_resolves_via_top_album():
     candidate = await DeezerClient().enrich_genre(Candidate(name="VNV Nation", similarity=0.9))
 
     assert candidate.deezer_genre == "Electro"
+    assert candidate.popularity == 46417
+
+
+@respx.mock
+async def test_enrich_genre_sets_popularity_even_when_genre_lookup_fails():
+    respx.get("https://api.deezer.com/search/artist").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 3821, "name": "VNV Nation", "nb_fan": 46417}]})
+    )
+    respx.get("https://api.deezer.com/artist/3821/albums").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    candidate = await DeezerClient().enrich_genre(Candidate(name="VNV Nation", similarity=0.9))
+
+    assert candidate.deezer_genre is None
+    assert candidate.popularity == 46417
 
 
 @respx.mock
@@ -84,7 +100,7 @@ async def test_enrich_genre_api_error_leaves_candidate_unchanged():
 @respx.mock
 async def test_enrich_genre_uses_cache_on_second_call(tmp_path):
     search_route = respx.get("https://api.deezer.com/search/artist").mock(
-        return_value=httpx.Response(200, json={"data": [{"id": 3821, "name": "VNV Nation"}]})
+        return_value=httpx.Response(200, json={"data": [{"id": 3821, "name": "VNV Nation", "nb_fan": 46417}]})
     )
     respx.get("https://api.deezer.com/artist/3821/albums").mock(
         return_value=httpx.Response(200, json={"data": [{"genre_id": 106}]})
@@ -97,6 +113,8 @@ async def test_enrich_genre_uses_cache_on_second_call(tmp_path):
     client = DeezerClient(cache)
 
     await client.enrich_genre(Candidate(name="VNV Nation", similarity=0.9))
-    await client.enrich_genre(Candidate(name="VNV Nation", similarity=0.9))
+    second = await client.enrich_genre(Candidate(name="VNV Nation", similarity=0.9))
 
     assert search_route.call_count == 1
+    assert second.deezer_genre == "Electro"
+    assert second.popularity == 46417

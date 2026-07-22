@@ -1,4 +1,4 @@
-"""Deezer client: second, independent similar-artist source, plus optional genre enrichment.
+"""Deezer client: second, independent similar-artist source, plus genre/popularity enrichment.
 
 Deezer's public API has no auth token and no similarity score, only a
 ranked "related artists" list, so we synthesize a rank-decayed score to
@@ -9,6 +9,10 @@ genre_id - so genre enrichment resolves an artist's top album's genre_id
 to a genre name. It's a single, coarse genre (vs. Discogs' genre+style
 pair), but needs no token and shares the same best-effort, non-blocking
 contract as DiscogsEnricher.
+
+The artist search response also carries nb_fan (Deezer's fan count), used
+as a rough popularity score - it comes along for free in the same lookup
+already made for genre enrichment, so no extra API call is needed.
 """
 
 from __future__ import annotations
@@ -43,31 +47,30 @@ class DeezerClient:
         ]
 
     async def enrich_genre(self, candidate: Candidate) -> Candidate:
-        """Best-effort genre attach; returns candidate unchanged on miss/error."""
+        """Best-effort genre + popularity (Deezer fan count) attach; returns candidate unchanged on miss/error."""
         if self._cache is not None:
             cached = self._cache.get(GENRE_CACHE_SOURCE, candidate.name)
             if cached is not None:
-                candidate.deezer_genre = cached
+                candidate.deezer_genre = cached.get("genre")
+                candidate.popularity = cached.get("popularity")
                 return candidate
 
         try:
-            genre = await self._fetch_genre(candidate.name)
+            artist = await self._find_artist(candidate.name)
+            if artist is None:
+                return candidate
+            genre = await self._fetch_genre_for_artist(artist["id"])
         except httpx.HTTPError:
             return candidate
 
-        if genre is None:
-            return candidate
-
+        metadata = {"genre": genre, "popularity": artist.get("nb_fan")}
         if self._cache is not None:
-            self._cache.set(GENRE_CACHE_SOURCE, candidate.name, genre)
+            self._cache.set(GENRE_CACHE_SOURCE, candidate.name, metadata)
         candidate.deezer_genre = genre
+        candidate.popularity = artist.get("nb_fan")
         return candidate
 
-    async def _fetch_genre(self, artist_name: str) -> str | None:
-        artist_id = await self._find_artist_id(artist_name)
-        if artist_id is None:
-            return None
-
+    async def _fetch_genre_for_artist(self, artist_id: int) -> str | None:
         response = await self._http.get(f"/artist/{artist_id}/albums", params={"limit": 1})
         response.raise_for_status()
         albums = response.json().get("data", [])
@@ -79,14 +82,18 @@ class DeezerClient:
         response.raise_for_status()
         return response.json().get("name")
 
-    async def _find_artist_id(self, name: str) -> int | None:
+    async def _find_artist(self, name: str) -> dict | None:
         response = await self._http.get("/search/artist", params={"q": name})
         response.raise_for_status()
         results = response.json().get("data", [])
         if not results:
             return None
         exact = next((r for r in results if r.get("name", "").lower() == name.lower()), None)
-        return (exact or results[0])["id"]
+        return exact or results[0]
+
+    async def _find_artist_id(self, name: str) -> int | None:
+        artist = await self._find_artist(name)
+        return artist["id"] if artist else None
 
     async def aclose(self) -> None:
         await self._http.aclose()

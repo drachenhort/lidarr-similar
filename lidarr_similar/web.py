@@ -319,7 +319,7 @@ def render_page(
       <thead>
         <tr>
           <th>#</th><th>Artist</th><th>Score</th><th>Sources</th>
-          <th>Last Release</th><th>Status</th><th>Genres</th><th>Actions</th>
+          <th>Popularity</th><th>Last Release</th><th>Status</th><th>Genres</th><th>Actions</th>
         </tr>
       </thead>
       <tbody>{rows}</tbody>
@@ -455,6 +455,7 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
     all_genres = candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else [])
     genres_cell = " ".join(_render_genre_tag(g) for g in all_genres) or "-"
     last_release = html.escape(candidate.discogs_latest_release_year) if candidate.discogs_latest_release_year else "-"
+    popularity = f"{candidate.popularity:,}" if candidate.popularity is not None else "-"
     name_attr = html.escape(candidate.name, quote=True)
 
     badges = []
@@ -501,6 +502,7 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
         f"<td>{html.escape(candidate.name)}</td>"
         f"<td>{candidate.similarity:.2f}</td>"
         f"<td>{html.escape(','.join(candidate.sources))}</td>"
+        f"<td>{popularity}</td>"
         f"<td>{last_release}</td>"
         f"<td>{status}</td>"
         f"<td>{genres_cell}</td>"

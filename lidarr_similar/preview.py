@@ -102,7 +102,7 @@ def print_table(candidates: list[Candidate], library_check_active: bool) -> None
     name_width = max(name_width, len("Artist"))
 
     header = (
-        f"{'#':>3}  {'Artist':<{name_width}}  {'Score':>5}  {'Sources':<14}  "
+        f"{'#':>3}  {'Artist':<{name_width}}  {'Score':>5}  {'Sources':<14}  {'Popularity':>10}  "
         f"{'Last Release':<12}  {'In Library':<10}  Genres"
     )
     print(header)
@@ -111,11 +111,12 @@ def print_table(candidates: list[Candidate], library_check_active: bool) -> None
     for rank, candidate in enumerate(candidates, start=1):
         sources = ",".join(candidate.sources) or "-"
         genres = ", ".join(candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else [])) or "-"
+        popularity = f"{candidate.popularity:,}" if candidate.popularity is not None else "-"
         last_release = candidate.discogs_latest_release_year or "-"
         in_library = "yes" if candidate.already_in_library else "-"
         print(
             f"{rank:>3}  {candidate.name:<{name_width}}  {candidate.similarity:>5.2f}  "
-            f"{sources:<14}  {last_release:<12}  {in_library:<10}  {genres}"
+            f"{sources:<14}  {popularity:>10}  {last_release:<12}  {in_library:<10}  {genres}"
         )
 
     print()

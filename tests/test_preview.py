@@ -59,6 +59,7 @@ def test_print_table_lists_candidates_with_sources_and_genres(capsys):
             sources=["lastfm", "deezer"],
             discogs_genres=["Electronic"],
             discogs_latest_release_year="2022",
+            popularity=12345,
         ),
         Candidate(name="Aphex Twin", similarity=0.8, sources=["deezer"], already_in_library=True),
     ]
@@ -70,6 +71,7 @@ def test_print_table_lists_candidates_with_sources_and_genres(capsys):
     assert "lastfm,deezer" in output
     assert "Electronic" in output
     assert "2022" in output
+    assert "12,345" in output
     assert "Aphex Twin" in output
     assert "2 candidate(s) shown." in output
     assert "Note:" not in output

@@ -19,6 +19,7 @@ class Candidate:
     discogs_match_confidence: float | None = None
     discogs_latest_release_year: str | None = None
     deezer_genre: str | None = None
+    popularity: int | None = None
     already_in_library: bool = False
     ignored: bool = False
     ignored_genre: str | None = None

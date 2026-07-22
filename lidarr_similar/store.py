@@ -26,6 +26,7 @@ class CandidateStore:
                 discogs_styles TEXT NOT NULL,
                 discogs_latest_release_year TEXT,
                 deezer_genre TEXT,
+                popularity INTEGER,
                 already_in_library INTEGER NOT NULL DEFAULT 0,
                 ignored INTEGER NOT NULL DEFAULT 0,
                 ignored_genre TEXT,
@@ -43,8 +44,8 @@ class CandidateStore:
             """
             INSERT INTO candidates
                 (name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles,
-                 discogs_latest_release_year, deezer_genre, already_in_library, ignored, ignored_genre, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 discogs_latest_release_year, deezer_genre, popularity, already_in_library, ignored, ignored_genre, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -57,6 +58,7 @@ class CandidateStore:
                     json.dumps(c.discogs_styles),
                     c.discogs_latest_release_year,
                     c.deezer_genre,
+                    c.popularity,
                     int(c.already_in_library),
                     int(c.ignored),
                     c.ignored_genre,
@@ -70,7 +72,7 @@ class CandidateStore:
     def load_all(self) -> list[Candidate]:
         rows = self._conn.execute(
             "SELECT name, similarity, sources, mbid, discogs_id, discogs_genres, discogs_styles, "
-            "discogs_latest_release_year, deezer_genre, already_in_library, ignored, ignored_genre "
+            "discogs_latest_release_year, deezer_genre, popularity, already_in_library, ignored, ignored_genre "
             "FROM candidates ORDER BY similarity DESC"
         ).fetchall()
         return [
@@ -84,9 +86,10 @@ class CandidateStore:
                 discogs_styles=json.loads(row[6]),
                 discogs_latest_release_year=row[7],
                 deezer_genre=row[8],
-                already_in_library=bool(row[9]),
-                ignored=bool(row[10]),
-                ignored_genre=row[11],
+                popularity=row[9],
+                already_in_library=bool(row[10]),
+                ignored=bool(row[11]),
+                ignored_genre=row[12],
             )
             for row in rows
         ]

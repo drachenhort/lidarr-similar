@@ -3,8 +3,8 @@
 Discovers artists similar to your Last.fm listening history and adds them to Lidarr.
 
 Candidates are gathered from Last.fm's `artist.getSimilar` and Deezer's related-artist
-data (artists found by both sources are boosted), then optionally enriched with
-Discogs genre/style metadata before being handed to Lidarr.
+data (artists found by both sources are boosted), then optionally enriched with Discogs
+genre/style metadata and a Deezer-fan-count popularity score before being handed to Lidarr.
 
 See [CHANGELOG.md](CHANGELOG.md) for what's been built so far.
 

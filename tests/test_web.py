@@ -44,6 +44,7 @@ def test_index_lists_stored_candidates(tmp_path, monkeypatch):
                 sources=["lastfm", "deezer"],
                 deezer_genre="Electro",
                 discogs_latest_release_year="2025",
+                popularity=46417,
             )
         ]
     )
@@ -55,6 +56,7 @@ def test_index_lists_stored_candidates(tmp_path, monkeypatch):
     assert "VNV Nation" in response.text
     assert "Electro" in response.text
     assert "2025" in response.text
+    assert "46,417" in response.text
     assert "Last updated:" in response.text
 
 
