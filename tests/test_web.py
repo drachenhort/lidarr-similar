@@ -679,7 +679,7 @@ def test_config_page_flags_invalid_quality_profile_id(monkeypatch):
     client = TestClient(app)
     response = client.get("/config")
 
-    assert "set, but invalid" in response.text
+    assert "led-invalid" in response.text
     assert "numeric ID" in response.text
 
 
@@ -785,7 +785,7 @@ def test_config_page_shows_metadata_profile_dropdown_when_lidarr_reachable(monke
     client = TestClient(app)
     response = client.get("/config")
 
-    rows = response.text.split("<tr>")
+    rows = response.text.split('<div class="jack-row">')
     metadata_row = next(r for r in rows if "LIDARR_METADATA_PROFILE_ID" in r)
     assert "<select" in metadata_row
     assert "None (id 2)" in metadata_row
@@ -798,7 +798,7 @@ def test_config_page_falls_back_to_text_input_when_lidarr_unreachable(monkeypatc
     client = TestClient(app)
     response = client.get("/config")
 
-    rows = response.text.split("<tr>")
+    rows = response.text.split('<div class="jack-row">')
     profile_row = next(r for r in rows if "LIDARR_QUALITY_PROFILE_ID" in r)
     assert 'name="LIDARR_QUALITY_PROFILE_ID"' in profile_row
     assert "<select" not in profile_row

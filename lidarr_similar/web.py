@@ -209,6 +209,44 @@ _BASE_STYLE = """
     .status-missing { color: var(--dim); }
     .status-invalid { color: var(--rose); font-weight: 600; }
 
+    /* /config: a rack of "modules", one per service, styled like a hardware patch
+       bay - a header LED summarizes each module, a per-row LED shows each variable's
+       state, echoing the results page's own instrument-panel language. */
+    .config-rack { display: flex; flex-direction: column; gap: 1.1rem; margin-top: 1.25rem; }
+    .module { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+    .module-head {
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+      background: var(--panel-head); padding: 0.7rem 1.1rem; border-bottom: 1px solid var(--line);
+    }
+    .module-name { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.12em; font-weight: 700; color: var(--paper); }
+    .module-hint { font-size: 0.8rem; color: var(--dim); }
+    .module-status { margin-left: auto; font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dim); }
+    .module-body { display: flex; flex-direction: column; }
+    .module-foot { padding: 0.7rem 1.1rem; background: var(--panel-head); border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
+
+    .jack-row { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 0.7rem 1.1rem; border-bottom: 1px solid var(--line); }
+    .jack-row:last-child { border-bottom: none; }
+    .jack-label { display: flex; align-items: flex-start; gap: 0.6rem; min-width: 0; }
+    .jack-name { font-family: var(--font-mono); font-size: 0.85rem; color: var(--paper); }
+    .jack-hint { font-size: 0.76rem; color: var(--dim); margin-top: 0.15rem; }
+    .jack-input { flex-shrink: 0; }
+    .jack-input input, .jack-input select { min-width: 230px; }
+
+    .led { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; margin-top: 0.3rem; flex-shrink: 0; }
+    .module-head .led { margin-top: 0; }
+    .led-ok { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+    .led-invalid { background: var(--rose); box-shadow: 0 0 6px var(--rose); }
+    .led-amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+    .led-missing { background: var(--line); }
+
+    .config-footer { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1.25rem; }
+
+    @media (max-width: 640px) {
+      .jack-row { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+      .jack-input input, .jack-input select { width: 100%; min-width: 0; }
+      .module-status { margin-left: 0; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       button { transition: none; }
     }
@@ -685,13 +723,29 @@ def render_page(
 </html>"""
 
 
+_CONFIG_GROUPS = (
+    ("LAST.FM", "Reads your scrobbles and similar-artist data.", ("LASTFM_API_KEY", "LASTFM_USERNAME")),
+    (
+        "LIDARR",
+        "Library lookups and one-click adds.",
+        ("LIDARR_URL", "LIDARR_API_KEY", "LIDARR_ROOT_FOLDER", "LIDARR_QUALITY_PROFILE_ID", "LIDARR_METADATA_PROFILE_ID"),
+    ),
+    (
+        "ENRICHMENT",
+        "Genre/style tags and popularity signals layered onto candidates.",
+        ("DISCOGS_TOKEN", "DISCOGS_ENABLED", "DEEZER_ENABLED", "LISTENBRAINZ_ENABLED"),
+    ),
+    ("STORAGE", "Where results, settings, and the enrichment cache persist. Environment-only.", ("CACHE_PATH", "STORE_PATH")),
+)
+
+
 def render_config_page(
     items: list[ConfigItem],
     profiles: dict[str, list[dict]],
     message: str | None,
     error: str | None,
 ) -> str:
-    rows = "".join(_render_config_row(item, profiles) for item in items)
+    by_name = {item.name: item for item in items}
     all_required_present = all(item.present for item in items if item.required_for == "core discovery pipeline")
     summary = (
         '<p class="banner ok">Core discovery pipeline is configured (Last.fm credentials present).</p>'
@@ -701,6 +755,10 @@ def render_config_page(
     )
     action_message = f'<p class="banner ok">{html.escape(message)}</p>' if message else ""
     action_error = f'<p class="banner error">{html.escape(error)}</p>' if error else ""
+    modules = "".join(
+        _render_config_module(name, description, [by_name[key] for key in keys if key in by_name], profiles)
+        for name, description, keys in _CONFIG_GROUPS
+    )
     return f"""<!doctype html>
 <html>
 <head>
@@ -717,45 +775,79 @@ def render_config_page(
   {action_message}
   {action_error}
   <form method="post" action="/config">
-    <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Variable</th><th>Status</th><th>Used for</th><th>Value</th></tr>
-      </thead>
-      <tbody>{rows}</tbody>
-    </table>
-    </div>
-    <p>
+    <div class="config-rack">{modules}</div>
+    <p class="config-footer">
       <button type="submit">Save configuration</button>
-      <button type="submit" formaction="/config/test-lidarr" formnovalidate class="test-button">Test Lidarr connection</button>
+      <span class="hint">Secret fields are never pre-filled or echoed back - leave one blank to keep its current value.</span>
     </p>
   </form>
-  <p class="hint">Secret fields (API keys, tokens) are never pre-filled or echoed back - leave one blank to keep its current value. CACHE_PATH/STORE_PATH are environment-only and can't be changed here.</p>
 </body>
 </html>"""
 
 
-def _render_config_row(item: ConfigItem, profiles: dict[str, list[dict]]) -> str:
-    if not item.present:
-        status = '<span class="status-missing">not set</span>'
-    elif not item.valid:
-        status = '<span class="status-invalid">set, but invalid</span>'
-    else:
-        status = '<span class="status-ok">&#10003; set</span>'
-    if item.source:
-        status += f'<br><span class="hint">from {html.escape(item.source)}</span>'
-    note_html = f"<br><span class=\"hint\">{html.escape(item.note)}</span>" if item.note else ""
+def _module_status(items: list[ConfigItem]) -> tuple[str, str]:
+    """A module's header LED summarizes its rows at a glance: red if anything set is
+    invalid, green if every row is set, amber if some but not all are, otherwise dim."""
+    if any(item.present and not item.valid for item in items):
+        return "led-invalid", "needs attention"
+    present = sum(1 for item in items if item.present)
+    if present == len(items):
+        return "led-ok", "configured"
+    if present == 0:
+        return "led-missing", "not set"
+    return "led-amber", "partially set"
 
-    input_html = _render_config_input(item, profiles)
 
-    return (
-        "<tr>"
-        f"<td><code>{html.escape(item.name)}</code></td>"
-        f"<td>{status}{note_html}</td>"
-        f"<td>{html.escape(item.required_for)}</td>"
-        f"<td>{input_html}</td>"
-        "</tr>"
+def _render_config_module(
+    name: str, description: str, items: list[ConfigItem], profiles: dict[str, list[dict]]
+) -> str:
+    led_class, status_text = _module_status(items)
+    rows = "".join(_render_jack_row(item, profiles) for item in items)
+    footer = (
+        '<div class="module-foot">'
+        '<button type="submit" formaction="/config/test-lidarr" formnovalidate class="test-button">'
+        "Test Lidarr connection</button></div>"
+        if name == "LIDARR"
+        else ""
     )
+    return f"""
+    <div class="module">
+      <div class="module-head">
+        <span class="led {led_class}" title="{html.escape(status_text)}"></span>
+        <span class="module-name">{html.escape(name)}</span>
+        <span class="module-hint">{html.escape(description)}</span>
+        <span class="module-status">{html.escape(status_text)}</span>
+      </div>
+      <div class="module-body">{rows}</div>
+      {footer}
+    </div>"""
+
+
+def _render_jack_row(item: ConfigItem, profiles: dict[str, list[dict]]) -> str:
+    if not item.present:
+        led_class = "led-missing"
+    elif not item.valid:
+        led_class = "led-invalid"
+    else:
+        led_class = "led-ok"
+    hint_bits = [item.required_for]
+    if item.source:
+        hint_bits.append(f"from {item.source}")
+    if item.note:
+        hint_bits.append(item.note)
+    hint = " &middot; ".join(html.escape(bit) for bit in hint_bits)
+    input_html = _render_config_input(item, profiles)
+    return f"""
+    <div class="jack-row">
+      <div class="jack-label">
+        <span class="led {led_class}"></span>
+        <div>
+          <div class="jack-name">{html.escape(item.name)}</div>
+          <div class="jack-hint">{hint}</div>
+        </div>
+      </div>
+      <div class="jack-input">{input_html}</div>
+    </div>"""
 
 
 _BOOLEAN_KEYS = {"DISCOGS_ENABLED", "DEEZER_ENABLED", "LISTENBRAINZ_ENABLED"}

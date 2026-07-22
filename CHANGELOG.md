@@ -4,6 +4,9 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+### Changed
+- Redesigned `/config` from a single flat table of every variable into a "patch bay" of grouped modules (Last.fm, Lidarr, Enrichment, Storage), each a bordered panel with its own header LED summarizing that module's state (green/amber/red/dim) and per-row LEDs next to each variable, echoing the results page's own instrument-panel visual language instead of a generic settings table. "Test Lidarr connection" now lives inside the Lidarr module itself rather than at the page bottom.
+
 ### Added
 - "Test Lidarr connection" button on `/config`, next to "Save configuration" - calls Lidarr's `/api/v1/system/status` and reports success (with the reported Lidarr version) or the specific failure reason, using whatever's currently in the LIDARR_URL/LIDARR_API_KEY fields (not necessarily saved yet, via `formaction`), falling back to the saved/env API key when that field is left blank. New `LidarrClient.system_status()` and `POST /config/test-lidarr`. Verified live against a real Lidarr instance.
 
