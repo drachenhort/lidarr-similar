@@ -39,6 +39,7 @@ pip install -r requirements-dev.txt   # includes runtime deps + pytest, respx
 | `DISCOGS_ENABLED` | no | `true` | Set to `false` to disable Discogs enrichment |
 | `DEEZER_ENABLED` | no | `true` | Set to `false` to disable the Deezer similarity source |
 | `CACHE_PATH` | no | `lidarr_similar.sqlite3` | Path to the local SQLite cache used for enrichment lookups |
+| `STORE_PATH` | no | `lidarr_similar_store.sqlite3` | Path to the SQLite store the web UI persists discovery results in |
 
 Example:
 
@@ -89,6 +90,55 @@ python -m lidarr_similar.preview --no-discogs          # skip genre enrichment
 python -m lidarr_similar.preview --no-lidarr           # ignore Lidarr even if configured
 python -m lidarr_similar.preview --help                # full option list
 ```
+
+### Web UI
+
+For a persistent dashboard you can check back on (e.g. running in a Docker container on
+Unraid), use the web UI instead of the CLIs:
+
+```bash
+uvicorn lidarr_similar.web:app --host 0.0.0.0 --port 8000
+```
+
+Open `http://localhost:8000`. It shows the most recent discovery results (persisted in
+`STORE_PATH` so they survive restarts) and has a "Run discovery now" button. A full run
+can take a few minutes — Discogs enrichment alone is rate-limited to 60 requests/min and
+makes about two calls per candidate — so refresh runs in the background and the page
+polls itself while it's in progress rather than blocking the request. Add `?min_score=0.5`
+to the URL to filter the table, same as the preview CLI's `--min-score`.
+
+`LIDARR_URL` / `LIDARR_API_KEY` are optional here too, same as preview mode.
+
+#### Docker / Unraid
+
+A `Dockerfile` and `docker-compose.yml` are included. To run it:
+
+```bash
+cp .env.example .env   # create this yourself, or export the vars directly
+docker compose up -d --build
+```
+
+Or with `docker run` directly:
+
+```bash
+docker build -t lidarr-similar .
+docker run -d \
+  --name lidarr-similar \
+  -p 8000:8000 \
+  -e LASTFM_API_KEY=your_lastfm_key \
+  -e LASTFM_USERNAME=your_lastfm_username \
+  -e DISCOGS_TOKEN=your_discogs_token \
+  -e LIDARR_URL=http://your-lidarr-host:8686 \
+  -e LIDARR_API_KEY=your_lidarr_key \
+  -v /path/on/unraid/appdata/lidarr-similar:/data \
+  lidarr-similar
+```
+
+On Unraid specifically: add this as a container via the Docker tab (either point it at
+this repo with a build, or build the image on the box and reference it locally), mount
+an appdata path to `/data` so the SQLite store and cache persist across container
+updates, and set the same environment variables under the container's config. The web UI
+will be reachable on the port you map to `8000`.
 
 ## Development
 

@@ -16,6 +16,7 @@ class Config:
     lidarr_url: str | None
     lidarr_api_key: str | None
     cache_path: str
+    store_path: str
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -28,6 +29,7 @@ class Config:
             lidarr_url=os.environ.get("LIDARR_URL"),
             lidarr_api_key=os.environ.get("LIDARR_API_KEY"),
             cache_path=os.environ.get("CACHE_PATH", "lidarr_similar.sqlite3"),
+            store_path=os.environ.get("STORE_PATH", "lidarr_similar_store.sqlite3"),
         )
 
 

@@ -1,0 +1,17 @@
+services:
+  lidarr-similar:
+    build: .
+    container_name: lidarr-similar
+    ports:
+      - "8000:8000"
+    environment:
+      LASTFM_API_KEY: ${LASTFM_API_KEY}
+      LASTFM_USERNAME: ${LASTFM_USERNAME}
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      DISCOGS_ENABLED: ${DISCOGS_ENABLED:-true}
+      DEEZER_ENABLED: ${DEEZER_ENABLED:-true}
+      LIDARR_URL: ${LIDARR_URL:-}
+      LIDARR_API_KEY: ${LIDARR_API_KEY:-}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

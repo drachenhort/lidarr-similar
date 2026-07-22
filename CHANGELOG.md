@@ -4,6 +4,10 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+### Added
+- Web UI (`lidarr_similar/web.py`, FastAPI): a browsable dashboard showing discovered candidates, persisted across restarts via `CandidateStore` (SQLite). Includes a "Run discovery now" button; since a full run can take minutes (mostly Discogs' 60 req/min rate limit), refresh runs as a background task and the page polls itself while in progress rather than blocking the request - verified by a live run that took ~70s and returned 217 candidates. Supports `?min_score=` filtering like the preview CLI.
+- `Dockerfile` and `docker-compose.yml` for running the web UI in a container (e.g. on Unraid); built and smoke-tested locally. `STORE_PATH`/`CACHE_PATH` default under `/data`, meant to be volume-mounted for persistence across container updates.
+
 ### Fixed
 - Candidate merge and Lidarr-library dedupe now match names case- and diacritic-insensitively (`normalize_name()`), so e.g. Last.fm's "L'Âme Immortelle" and Deezer's "L'âme Immortelle" merge into one entry instead of appearing twice. Found via a live preview run against a real library.
 
