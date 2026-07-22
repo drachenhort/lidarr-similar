@@ -202,6 +202,24 @@ to `/data` so the SQLite store and cache persist across container updates, and s
 same environment variables under the container's config. The web UI will be reachable
 on the port you map to `8000`.
 
+#### Unraid Community Applications template
+
+[`unraid-template.xml`](unraid-template.xml) is a ready-made Community Applications
+container template (image, port, `/data` path, and all `LASTFM_*`/`LIDARR_*`/enrichment
+toggle env vars pre-declared with descriptions). Two ways to use it:
+
+- **Quickest**: in Unraid's Docker tab, click "Add Container", switch to
+  "advanced view", and paste
+  `https://raw.githubusercontent.com/drachenhort/lidarr-similar/master/unraid-template.xml`
+  into the template field.
+- **As a CA template repo**: in Community Applications' settings, add
+  `https://github.com/drachenhort/lidarr-similar` as a template repository - CA will
+  pick up `unraid-template.xml` automatically.
+
+Getting it listed in the public CA app store itself requires a separate PR against
+[Community Applications' template list](https://github.com/Squidly271/AppFeed) once the
+project is stable enough to submit.
+
 ## Development
 
 ```bash

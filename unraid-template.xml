@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>lidarr-similar</Name>
+  <Repository>ghcr.io/drachenhort/lidarr-similar:latest</Repository>
+  <Registry>https://github.com/drachenhort/lidarr-similar/pkgs/container/lidarr-similar</Registry>
+  <Branch>
+    <Tag>latest</Tag>
+    <TagDescription>Latest stable release</TagDescription>
+  </Branch>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/drachenhort/lidarr-similar/issues</Support>
+  <Project>https://github.com/drachenhort/lidarr-similar</Project>
+  <Overview>Discovers artists similar to your Last.fm listening history and helps you add them to Lidarr. Candidates come from Last.fm's artist.getSimilar and Deezer's related-artist data (boosted when both sources agree), optionally enriched with Discogs genre/style metadata and two popularity signals - Deezer fan count and ListenBrainz listener count. A web dashboard lets you review candidates, filter by minimum score, sort by popularity, ignore artists or whole genres, and add artists to Lidarr with one click.</Overview>
+  <Category>MediaApp:Music Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/drachenhort/lidarr-similar/master/unraid-template.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/drachenhort/lidarr-similar/master/icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>A Last.fm API key and username are required. A running Lidarr instance (URL + API key) is required for the "Add to Lidarr" button and library-dedup features, but the app also runs in preview-only mode without one.</Requires>
+
+  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="Port the lidarr-similar web dashboard listens on." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+
+  <Config Name="AppData" Target="/data" Default="/mnt/user/appdata/lidarr-similar" Mode="rw" Description="Persists the SQLite store (discovery results, ignore lists, saved settings) and enrichment cache across container updates." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/lidarr-similar</Config>
+
+  <Config Name="LASTFM_API_KEY" Target="LASTFM_API_KEY" Default="" Mode="" Description="Last.fm API key - create one at last.fm/api/account/create" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="LASTFM_USERNAME" Target="LASTFM_USERNAME" Default="" Mode="" Description="Last.fm username to read scrobbles/similar-artist data from" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+
+  <Config Name="LIDARR_URL" Target="LIDARR_URL" Default="" Mode="" Description="Base URL of your Lidarr instance, e.g. http://192.168.1.10:8686 - optional, but required for library dedup and the Add to Lidarr button" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="LIDARR_API_KEY" Target="LIDARR_API_KEY" Default="" Mode="" Description="Lidarr API key (Settings -> General) - optional, same requirement as LIDARR_URL" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="LIDARR_ROOT_FOLDER" Target="LIDARR_ROOT_FOLDER" Default="" Mode="" Description="Root folder path Lidarr should use for newly added artists, e.g. /music - required for the Add to Lidarr button" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="LIDARR_QUALITY_PROFILE_ID" Target="LIDARR_QUALITY_PROFILE_ID" Default="" Mode="" Description="Numeric Lidarr quality profile ID - easier to leave blank and set via the app's /config page, which shows a dropdown of your Lidarr instance's actual profile names" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="LIDARR_METADATA_PROFILE_ID" Target="LIDARR_METADATA_PROFILE_ID" Default="" Mode="" Description="Numeric Lidarr metadata profile ID - same as above, easier to set via the /config page dropdown" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="DISCOGS_TOKEN" Target="DISCOGS_TOKEN" Default="" Mode="" Description="Discogs personal access token (discogs.com/settings/developers) - optional, enables genre/style/release-year enrichment" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="DISCOGS_ENABLED" Target="DISCOGS_ENABLED" Default="true" Mode="" Description="Enable Discogs genre/style enrichment (true/false)" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="DEEZER_ENABLED" Target="DEEZER_ENABLED" Default="true" Mode="" Description="Enable Deezer as a similarity source and popularity signal (true/false)" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="LISTENBRAINZ_ENABLED" Target="LISTENBRAINZ_ENABLED" Default="true" Mode="" Description="Enable ListenBrainz listener-count popularity enrichment (true/false)" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+</Container>
