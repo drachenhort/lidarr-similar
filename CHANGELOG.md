@@ -4,6 +4,9 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+### Fixed
+- Candidate merge and Lidarr-library dedupe now match names case- and diacritic-insensitively (`normalize_name()`), so e.g. Last.fm's "L'Âme Immortelle" and Deezer's "L'âme Immortelle" merge into one entry instead of appearing twice. Found via a live preview run against a real library.
+
 ### Added
 - `--no-min-score` flag on the preview CLI to reset `--min-score` back to 0.0 (show every candidate), while `--limit` keeps its default of 25.
 - `--min-score` flag on `python -m lidarr_similar.preview` to drop candidates below a similarity threshold before display.

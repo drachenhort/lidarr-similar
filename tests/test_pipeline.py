@@ -37,6 +37,21 @@ async def test_discover_candidates_skips_existing_lidarr_artists():
     assert [c.name for c in candidates] == ["New Artist"]
 
 
+async def test_discover_candidates_skips_existing_artists_ignoring_case_and_diacritics():
+    lastfm = AsyncMock()
+    lastfm.top_artists.return_value = ["Seed A"]
+    lastfm.similar_artists.return_value = [
+        Candidate(name="l'âme immortelle", similarity=0.9),
+        Candidate(name="New Artist", similarity=0.7),
+    ]
+
+    candidates = await discover_candidates(
+        lastfm, username="user", discogs=None, existing_artist_names={"L'Âme Immortelle"}
+    )
+
+    assert [c.name for c in candidates] == ["New Artist"]
+
+
 async def test_discover_candidates_applies_discogs_enrichment():
     lastfm = AsyncMock()
     lastfm.top_artists.return_value = ["Seed A"]
