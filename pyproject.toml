@@ -1,6 +1,6 @@
 [project]
 name = "lidarr-similar"
-version = "0.2.0"
+version = "0.3.0"
 description = "Discover new artists similar to your Last.fm listening history and add them to Lidarr"
 requires-python = ">=3.11"
 dependencies = [

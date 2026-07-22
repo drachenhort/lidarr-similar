@@ -4,6 +4,8 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+## v0.3.0 - 2026-07-22
+
 ### Added
 - Optional password protection for the web UI: setting `AUTH_PASSWORD` (via `/config` or the environment) gates every route behind a `/login` page and a 30-day session cookie; leaving it unset keeps the previous no-login behavior, so upgrading never locks anyone out. New `AUTH_SKIP_LOCAL` toggle skips the login page entirely for requests from private/loopback addresses (RFC 1918, `127.0.0.0/8`), checked via `X-Forwarded-For` when present so it still works behind a reverse proxy. New `lidarr_similar/auth.py` (in-memory sessions, constant-time password check, local-address detection) and a new "ACCESS" module on `/config`. Verified live: unauthenticated requests redirect to `/login`, a wrong password re-shows the login page with an error, a correct password grants access, `AUTH_SKIP_LOCAL` bypasses login for a simulated LAN client, and logging out revokes the session.
 
