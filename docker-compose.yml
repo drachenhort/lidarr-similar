@@ -12,6 +12,8 @@ services:
       DEEZER_ENABLED: ${DEEZER_ENABLED:-true}
       LIDARR_URL: ${LIDARR_URL:-}
       LIDARR_API_KEY: ${LIDARR_API_KEY:-}
+      LIDARR_ROOT_FOLDER: ${LIDARR_ROOT_FOLDER:-}
+      LIDARR_QUALITY_PROFILE_ID: ${LIDARR_QUALITY_PROFILE_ID:-}
     volumes:
       - ./data:/data
     restart: unless-stopped

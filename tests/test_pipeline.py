@@ -69,3 +69,52 @@ async def test_discover_candidates_applies_discogs_enrichment():
     await discover_candidates(lastfm, username="user", discogs=discogs, existing_artist_names=set())
 
     discogs.enrich.assert_awaited_once()
+
+
+async def test_discover_candidates_drops_ignored_names_before_enrichment():
+    lastfm = AsyncMock()
+    lastfm.top_artists.return_value = ["Seed A"]
+    lastfm.similar_artists.return_value = [
+        Candidate(name="Skip Me", similarity=0.9),
+        Candidate(name="Keep Me", similarity=0.7),
+    ]
+    discogs = AsyncMock()
+    discogs.enrich.side_effect = lambda c: c
+
+    candidates = await discover_candidates(
+        lastfm,
+        username="user",
+        discogs=discogs,
+        existing_artist_names=set(),
+        ignored_names={"skip me"},
+    )
+
+    assert [c.name for c in candidates] == ["Keep Me"]
+    discogs.enrich.assert_awaited_once()
+
+
+async def test_discover_candidates_calls_on_progress_after_merge_and_each_enrichment():
+    lastfm = AsyncMock()
+    lastfm.top_artists.return_value = ["Seed A"]
+    lastfm.similar_artists.return_value = [
+        Candidate(name="X", similarity=0.9),
+        Candidate(name="Y", similarity=0.7),
+    ]
+    discogs = AsyncMock()
+    discogs.enrich.side_effect = lambda c: c
+
+    snapshots: list[int] = []
+
+    async def on_progress(candidates):
+        snapshots.append(len(candidates))
+
+    await discover_candidates(
+        lastfm,
+        username="user",
+        discogs=discogs,
+        existing_artist_names=set(),
+        on_progress=on_progress,
+    )
+
+    # once after merge, once per candidate enriched (2 candidates)
+    assert snapshots == [2, 2, 2]

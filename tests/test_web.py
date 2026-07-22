@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from lidarr_similar import web
 from lidarr_similar.config import Config
 from lidarr_similar.models import Candidate
-from lidarr_similar.store import CandidateStore
+from lidarr_similar.store import CandidateStore, IgnoreList
 from lidarr_similar.web import app
 
 
@@ -149,9 +149,14 @@ def test_refresh_sets_running_flag_and_returns_immediately(monkeypatch):
 
 
 async def test_run_discovery_persists_candidates_and_clears_running_flag(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        web, "discover_candidates", lambda *a, **k: _immediate([Candidate(name="X", similarity=0.5, sources=["lastfm"])])
-    )
+    candidates = [Candidate(name="X", similarity=0.5, sources=["lastfm"])]
+
+    async def fake_discover_candidates(*args, on_progress=None, **kwargs):
+        if on_progress is not None:
+            await on_progress(candidates)
+        return candidates
+
+    monkeypatch.setattr(web, "discover_candidates", fake_discover_candidates)
     config = Config(
         lastfm_api_key="key",
         lastfm_username="user",
@@ -160,6 +165,8 @@ async def test_run_discovery_persists_candidates_and_clears_running_flag(tmp_pat
         deezer_enabled=False,
         lidarr_url=None,
         lidarr_api_key=None,
+        lidarr_root_folder=None,
+        lidarr_quality_profile_id=None,
         cache_path=str(tmp_path / "cache.sqlite3"),
         store_path=str(tmp_path / "store.sqlite3"),
     )
@@ -173,5 +180,135 @@ async def test_run_discovery_persists_candidates_and_clears_running_flag(tmp_pat
     store.close()
 
 
-async def _immediate(value):
-    return value
+def test_index_paginates_results(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all(
+        [Candidate(name=f"Artist {i}", similarity=1.0 - i / 1000, sources=["lastfm"]) for i in range(60)]
+    )
+    store.close()
+
+    client = TestClient(app)
+    page1 = client.get("/")
+    page2 = client.get("/?page=2")
+
+    assert "Artist 0" in page1.text
+    assert "Artist 49" in page1.text
+    assert "Artist 50" not in page1.text
+    assert "Page 1 of 2" in page1.text
+
+    assert "Artist 50" in page2.text
+    assert "Artist 0" not in page2.text
+    assert "Page 2 of 2" in page2.text
+
+
+def test_index_hides_no_pagination_controls_for_single_page(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all([Candidate(name="Solo", similarity=0.9, sources=["lastfm"])])
+    store.close()
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert 'class="pagination"' not in response.text
+
+
+def test_index_excludes_ignored_artists(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all(
+        [
+            Candidate(name="Ignored Artist", similarity=0.9, sources=["lastfm"]),
+            Candidate(name="Kept Artist", similarity=0.8, sources=["lastfm"]),
+        ]
+    )
+    store.close()
+    ignore_list = IgnoreList(store_path)
+    ignore_list.add("Ignored Artist")
+    ignore_list.close()
+
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert "Ignored Artist" not in response.text
+    assert "Kept Artist" in response.text
+
+
+def test_ignore_endpoint_removes_candidate_and_persists(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all([Candidate(name="Unwanted", similarity=0.9, sources=["lastfm"])])
+    store.close()
+
+    client = TestClient(app)
+    response = client.post("/ignore", data={"name": "Unwanted"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+
+    ignore_list = IgnoreList(store_path)
+    assert ignore_list.is_ignored("Unwanted") is True
+    ignore_list.close()
+
+    store = CandidateStore(store_path)
+    assert store.load_all() == []
+    store.close()
+
+
+def test_add_endpoint_without_lidarr_config_shows_error(tmp_path, monkeypatch):
+    for var in ("LIDARR_URL", "LIDARR_API_KEY", "LIDARR_ROOT_FOLDER", "LIDARR_QUALITY_PROFILE_ID"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("LASTFM_API_KEY", "key")
+    monkeypatch.setenv("LASTFM_USERNAME", "user")
+
+    client = TestClient(app)
+    response = client.post("/add", data={"name": "Some Artist"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+
+
+def test_add_endpoint_marks_candidate_in_library_on_success(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    monkeypatch.setenv("LASTFM_API_KEY", "key")
+    monkeypatch.setenv("LASTFM_USERNAME", "user")
+    monkeypatch.setenv("LIDARR_URL", "http://lidarr.local")
+    monkeypatch.setenv("LIDARR_API_KEY", "lidarr-key")
+    monkeypatch.setenv("LIDARR_ROOT_FOLDER", "/music")
+    monkeypatch.setenv("LIDARR_QUALITY_PROFILE_ID", "1")
+
+    store = CandidateStore(store_path)
+    store.replace_all([Candidate(name="New Band", similarity=0.9, sources=["lastfm"])])
+    store.close()
+
+    class FakeLidarrClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def lookup_artist(self, name):
+            return {"artistName": name, "foreignArtistId": "abc"}
+
+        async def add_artist(self, candidate, root_folder, quality_profile_id):
+            return None
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(web, "LidarrClient", FakeLidarrClient)
+
+    client = TestClient(app)
+    response = client.post("/add", data={"name": "New Band"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+
+    store = CandidateStore(store_path)
+    candidate = next(c for c in store.load_all() if c.name == "New Band")
+    assert candidate.already_in_library is True
+    store.close()

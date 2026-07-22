@@ -10,20 +10,19 @@ notice instead of silently hiding them.
 
 from __future__ import annotations
 
-import unicodedata
+from collections.abc import Awaitable, Callable
 
 from lidarr_similar.deezer import DeezerClient
 from lidarr_similar.discogs import DiscogsEnricher
 from lidarr_similar.lastfm import LastFmClient
 from lidarr_similar.models import Candidate
+from lidarr_similar.naming import normalize_name
+
+__all__ = ["discover_candidates", "merge_candidates", "normalize_name"]
 
 OVERLAP_BOOST = 0.15
 
-
-def normalize_name(name: str) -> str:
-    """Case- and diacritic-insensitive key so e.g. 'L'âme Immortelle' and 'L'Âme Immortelle' merge as one artist."""
-    stripped = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
-    return stripped.casefold()
+ProgressCallback = Callable[[list[Candidate]], Awaitable[None]]
 
 
 async def discover_candidates(
@@ -35,7 +34,16 @@ async def discover_candidates(
     deezer_genre_enrichment: bool = True,
     top_n_seed_artists: int = 20,
     similar_per_artist: int = 10,
+    ignored_names: set[str] = frozenset(),
+    on_progress: ProgressCallback | None = None,
 ) -> list[Candidate]:
+    """Run discovery end to end. If on_progress is given, it's awaited with the
+    current best-known candidate list after the initial merge and again after
+    each candidate is enriched, so a caller (e.g. the web UI) can persist and
+    display partial results instead of waiting for the entire run to finish.
+    Candidates matching ignored_names (case/diacritic-insensitive) are dropped
+    right after merge, before any enrichment API calls are spent on them.
+    """
     seed_artists = await lastfm.top_artists(username, limit=top_n_seed_artists)
 
     candidate_lists: list[list[Candidate]] = []
@@ -46,14 +54,28 @@ async def discover_candidates(
 
     merged = merge_candidates(candidate_lists)
     existing_normalized = {normalize_name(name) for name in existing_artist_names}
-    candidates = list(merged.values())
+    ignored_normalized = {normalize_name(name) for name in ignored_names}
+    candidates = sorted(
+        (c for c in merged.values() if normalize_name(c.name) not in ignored_normalized),
+        key=lambda c: c.similarity,
+        reverse=True,
+    )
     for candidate in candidates:
         candidate.already_in_library = normalize_name(candidate.name) in existing_normalized
 
+    if on_progress is not None:
+        await on_progress(candidates)
+
     if discogs is not None:
-        candidates = [await discogs.enrich(c) for c in candidates]
+        for i, candidate in enumerate(candidates):
+            candidates[i] = await discogs.enrich(candidate)
+            if on_progress is not None:
+                await on_progress(candidates)
     if deezer is not None and deezer_genre_enrichment:
-        candidates = [await deezer.enrich_genre(c) for c in candidates]
+        for i, candidate in enumerate(candidates):
+            candidates[i] = await deezer.enrich_genre(candidate)
+            if on_progress is not None:
+                await on_progress(candidates)
 
     return sorted(candidates, key=lambda c: c.similarity, reverse=True)
 

@@ -39,7 +39,9 @@ pip install -r requirements-dev.txt   # includes runtime deps + pytest, respx
 | `DISCOGS_ENABLED` | no | `true` | Set to `false` to disable Discogs enrichment |
 | `DEEZER_ENABLED` | no | `true` | Set to `false` to disable the Deezer similarity source |
 | `CACHE_PATH` | no | `lidarr_similar.sqlite3` | Path to the local SQLite cache used for enrichment lookups |
-| `STORE_PATH` | no | `lidarr_similar_store.sqlite3` | Path to the SQLite store the web UI persists discovery results in |
+| `STORE_PATH` | no | `lidarr_similar_store.sqlite3` | Path to the SQLite store the web UI persists discovery results and the ignore list in |
+| `LIDARR_ROOT_FOLDER` | for the web UI's "Add to Lidarr" button | — | Root folder path Lidarr should use for newly added artists, e.g. `/music` |
+| `LIDARR_QUALITY_PROFILE_ID` | for the web UI's "Add to Lidarr" button | — | Numeric quality profile ID from Lidarr's Settings → Profiles |
 
 Example:
 
@@ -103,11 +105,20 @@ uvicorn lidarr_similar.web:app --host 0.0.0.0 --port 8000
 Open `http://localhost:8000`. It shows the most recent discovery results (persisted in
 `STORE_PATH` so they survive restarts) and has a "Run discovery now" button. A full run
 can take a few minutes — Discogs enrichment alone is rate-limited to 60 requests/min and
-makes about two calls per candidate — so refresh runs in the background and the page
-polls itself while it's in progress rather than blocking the request. Add `?min_score=0.5`
-to the URL to filter the table, same as the preview CLI's `--min-score`.
+makes about two calls per candidate — so refresh runs in the background, and results fill
+in as they're found rather than only appearing once the whole run finishes (the page
+polls itself every 5s while a run is in progress and shows an "N/M enriched" counter).
+Results are paginated at 50 per page. Add `?min_score=0.5` to the URL to filter the table,
+same as the preview CLI's `--min-score`.
 
 `LIDARR_URL` / `LIDARR_API_KEY` are optional here too, same as preview mode.
+
+Each row has two actions:
+- **Add to Lidarr** — looks the artist up in Lidarr and adds it directly, no need to leave
+  the page. Only shown once `LIDARR_URL`, `LIDARR_API_KEY`, `LIDARR_ROOT_FOLDER`, and
+  `LIDARR_QUALITY_PROFILE_ID` are all set; otherwise a hint explains what's missing.
+- **Ignore** — permanently excludes the artist from future discovery runs (persisted in
+  `STORE_PATH`) and removes it from the current view immediately.
 
 #### Docker / Unraid
 

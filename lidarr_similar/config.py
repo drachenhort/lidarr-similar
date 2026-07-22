@@ -15,11 +15,14 @@ class Config:
     deezer_enabled: bool
     lidarr_url: str | None
     lidarr_api_key: str | None
+    lidarr_root_folder: str | None
+    lidarr_quality_profile_id: int | None
     cache_path: str
     store_path: str
 
     @classmethod
     def from_env(cls) -> "Config":
+        quality_profile_id = os.environ.get("LIDARR_QUALITY_PROFILE_ID")
         return cls(
             lastfm_api_key=_require("LASTFM_API_KEY"),
             lastfm_username=_require("LASTFM_USERNAME"),
@@ -28,6 +31,8 @@ class Config:
             deezer_enabled=os.environ.get("DEEZER_ENABLED", "true").lower() == "true",
             lidarr_url=os.environ.get("LIDARR_URL"),
             lidarr_api_key=os.environ.get("LIDARR_API_KEY"),
+            lidarr_root_folder=os.environ.get("LIDARR_ROOT_FOLDER"),
+            lidarr_quality_profile_id=int(quality_profile_id) if quality_profile_id else None,
             cache_path=os.environ.get("CACHE_PATH", "lidarr_similar.sqlite3"),
             store_path=os.environ.get("STORE_PATH", "lidarr_similar_store.sqlite3"),
         )
