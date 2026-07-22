@@ -30,6 +30,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--min-score", type=float, default=0.0, help="Drop candidates below this similarity score (default: 0.0)"
     )
     parser.add_argument(
+        "--no-min-score", action="store_true", help="Reset --min-score back to 0.0, showing every candidate"
+    )
+    parser.add_argument(
         "--seed-artists", type=int, default=20, help="Number of top Last.fm artists to seed from"
     )
     parser.add_argument(
@@ -72,7 +75,8 @@ async def run(argv: list[str] | None = None) -> None:
             top_n_seed_artists=args.seed_artists,
             similar_per_artist=args.similar_per_artist,
         )
-        candidates = filter_by_min_score(candidates, args.min_score)
+        min_score = 0.0 if args.no_min_score else args.min_score
+        candidates = filter_by_min_score(candidates, min_score)
         print_table(candidates[: args.limit], dedupe_active=lidarr is not None)
     finally:
         await lastfm.aclose()

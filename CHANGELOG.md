@@ -5,6 +5,7 @@ All notable changes to this project are documented here, in reverse chronologica
 ## Unreleased
 
 ### Added
+- `--no-min-score` flag on the preview CLI to reset `--min-score` back to 0.0 (show every candidate), while `--limit` keeps its default of 25.
 - `--min-score` flag on `python -m lidarr_similar.preview` to drop candidates below a similarity threshold before display.
 - `DeezerClient.enrich_genre()` — genre enrichment from Deezer, no API token required. Deezer artist objects carry no genre field, so this resolves an artist's top album's `genre_id` to a genre name; cached and best-effort like `DiscogsEnricher`. Wired into `discover_candidates()` and shown alongside Discogs genres in both CLIs.
 - `python -m lidarr_similar.preview` — terminal preview CLI showing a ranked table of candidates (score, contributing sources, Discogs genres) without ever calling Lidarr's add-artist endpoint. Lidarr credentials are now optional; when unset, preview shows all candidates without library dedupe. Supports `--limit`, `--seed-artists`, `--similar-per-artist`, `--no-deezer`, `--no-discogs`, `--no-lidarr`.

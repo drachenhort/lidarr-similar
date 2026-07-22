@@ -9,6 +9,7 @@ def test_parse_args_defaults():
 
     assert args.limit == 25
     assert args.min_score == 0.0
+    assert args.no_min_score is False
     assert args.seed_artists == 20
     assert args.similar_per_artist == 10
     assert args.no_deezer is False
@@ -23,6 +24,13 @@ def test_parse_args_overrides():
     assert args.min_score == 0.5
     assert args.no_deezer is True
     assert args.no_lidarr is True
+
+
+def test_parse_args_no_min_score():
+    args = parse_args(["--min-score", "0.5", "--no-min-score"])
+
+    assert args.min_score == 0.5
+    assert args.no_min_score is True
 
 
 def test_filter_by_min_score_drops_low_scores():
