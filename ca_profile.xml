@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Maintainer>
+  <Icon>https://raw.githubusercontent.com/drachenhort/lidarr-similar/master/icon.png</Icon>
+  <Profile>
+    I build lidarr-similar, a self-hosted tool that discovers artists similar to your
+    Last.fm listening history (via Last.fm, Deezer, and ListenBrainz) and helps you add
+    them to Lidarr with one click.
+  </Profile>
+  <WebPage>https://github.com/drachenhort/lidarr-similar</WebPage>
+</Maintainer>
