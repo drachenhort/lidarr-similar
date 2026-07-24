@@ -44,7 +44,7 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from lidarr_similar import __version__
 from lidarr_similar.auth import (
@@ -210,9 +210,7 @@ _BASE_STYLE = """
     .toolbar { display: flex; justify-content: space-between; align-items: center; margin: 1.25rem 0 1rem; gap: 1rem; flex-wrap: wrap; }
     .sort-form { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; color: var(--dim); }
     .sort-form select { background: var(--panel); color: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
-    .pagination { margin-top: 1.1rem; display: flex; gap: 0.9rem; align-items: center; font-size: 0.88rem; color: var(--dim); }
-    .pagination a { text-decoration: none; color: var(--amber); }
-    .pagination a.disabled { pointer-events: none; color: var(--line); }
+    .scroll-status { margin-top: 1.1rem; font-size: 0.85rem; color: var(--dim); text-align: center; min-height: 1.2em; }
 
     .ignore-list { margin-bottom: 1rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 1rem; background: var(--panel); }
     .ignore-list summary {
@@ -322,6 +320,85 @@ _BASE_STYLE = """
     }
 """
 
+_INDEX_SCRIPT = """
+(function () {
+  var wrap = document.getElementById('table-wrap');
+  if (!wrap) return;
+  var tbody = document.getElementById('candidate-rows');
+  var sentinel = document.getElementById('scroll-sentinel');
+  var status = document.getElementById('scroll-status');
+  var banner = document.getElementById('action-banner');
+
+  var page = parseInt(wrap.dataset.page, 10);
+  var hasMore = wrap.dataset.hasMore === 'true';
+  var total = parseInt(wrap.dataset.total, 10);
+  var minScore = wrap.dataset.minScore;
+  var sort = wrap.dataset.sort;
+  var loading = false;
+  var observer = null;
+
+  function updateStatus() {
+    if (!status) return;
+    status.textContent = hasMore ? ('Loaded ' + tbody.rows.length + ' of ' + total + ' artists.') : '';
+  }
+
+  function loadMore() {
+    if (loading || !hasMore) return;
+    loading = true;
+    var nextPage = page + 1;
+    var qs = new URLSearchParams({ page: nextPage, min_score: minScore, sort: sort });
+    fetch('/rows?' + qs.toString())
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        tbody.insertAdjacentHTML('beforeend', data.html);
+        page = nextPage;
+        hasMore = data.has_more;
+        loading = false;
+        updateStatus();
+        if (!hasMore && observer) observer.disconnect();
+      })
+      .catch(function () { loading = false; });
+  }
+
+  if (hasMore && 'IntersectionObserver' in window) {
+    observer = new IntersectionObserver(function (entries) {
+      if (entries[0].isIntersecting) loadMore();
+    });
+    observer.observe(sentinel);
+  }
+  updateStatus();
+
+  function showBanner(text, kind) {
+    if (!banner || !text) return;
+    banner.innerHTML = '<p class="banner ' + kind + '">' + text.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';
+  }
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form.classList.contains('row-action')) return;
+    event.preventDefault();
+    var row = form.closest('tr');
+    var formData = new FormData(form);
+    fetch(form.action, { method: 'POST', body: formData, headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        banner.innerHTML = '';
+        if (data.error) {
+          showBanner(data.error, 'error');
+          return;
+        }
+        showBanner(data.message, 'ok');
+        if (row && data.row_html) {
+          row.outerHTML = data.row_html;
+        } else if (row) {
+          row.remove();
+        }
+      })
+      .catch(function () { showBanner('Request failed - please retry.', 'error'); });
+  });
+})();
+"""
+
 
 @dataclass
 class RefreshStatus:
@@ -343,6 +420,49 @@ def _describe(error: Exception) -> str:
     confirmed live, this silently hid the error banner entirely, since the template only
     renders it when status.error is truthy. Always fall back to the exception's type name."""
     return str(error) or type(error).__name__
+
+
+def _load_sorted_candidates(store: CandidateStore, min_score: float, sort: str) -> list[Candidate]:
+    candidates = [c for c in store.load_all() if c.similarity >= min_score]
+    candidates.sort(key=lambda c: (c.ignored, *_SORT_KEYS.get(sort, _SORT_KEYS["score"])(c)))
+    return candidates
+
+
+def _is_ajax(request: Request) -> bool:
+    return request.headers.get("x-requested-with") == "fetch"
+
+
+def _row_result(
+    request: Request,
+    name: str,
+    rank: int,
+    page: int,
+    min_score: float,
+    sort: str,
+    *,
+    message: str | None = None,
+    error: str | None = None,
+) -> Response:
+    """Row actions (add/ignore/unignore) are submitted via a fetch() call from the page's JS
+    so a click doesn't blow away infinite-scroll progress with a full-page redirect back to
+    page 1 - see the inline script in render_page. Non-JS clients still get the classic
+    redirect-to-index fallback, with the current page/min_score/sort preserved in the query
+    string so at least a plain reload lands back where the user was instead of page 1."""
+    if not _is_ajax(request):
+        params = {"page": page, "min_score": min_score, "sort": sort}
+        params.update({k: v for k, v in (("message", message), ("error", error)) if v is not None})
+        return RedirectResponse(f"/?{urlencode(params)}", status_code=303)
+
+    row_html = ""
+    if error is None:
+        store = CandidateStore(_store_path())
+        try:
+            candidate = next((c for c in store.load_all() if c.name == name), None)
+        finally:
+            store.close()
+        if candidate is not None:
+            row_html = _render_row(rank, candidate, _is_lidarr_add_enabled(), page, min_score, sort)
+    return JSONResponse({"message": message, "error": error, "row_html": row_html})
 
 
 def _format_updated(raw: str) -> str:
@@ -419,8 +539,7 @@ async def index(
 ) -> str:
     store = CandidateStore(_store_path())
     try:
-        candidates = [c for c in store.load_all() if c.similarity >= min_score]
-        candidates.sort(key=lambda c: (c.ignored, *_SORT_KEYS.get(sort, _SORT_KEYS["score"])(c)))
+        candidates = _load_sorted_candidates(store, min_score, sort)
         last_updated = store.last_updated()
     finally:
         store.close()
@@ -451,6 +570,26 @@ async def index(
         ignored_names,
         ignored_genres,
     )
+
+
+@app.get("/rows", response_class=JSONResponse)
+async def rows(min_score: float = 0.0, page: int = 1, sort: str = "score") -> JSONResponse:
+    """Fragment endpoint the index page's infinite scroll polls for additional pages of rows."""
+    store = CandidateStore(_store_path())
+    try:
+        candidates = _load_sorted_candidates(store, min_score, sort)
+    finally:
+        store.close()
+
+    total_pages = max(1, (len(candidates) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    page_items = candidates[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
+    lidarr_add_enabled = _is_lidarr_add_enabled()
+    rows_html = "".join(
+        _render_row(rank, c, lidarr_add_enabled, page, min_score, sort)
+        for rank, c in enumerate(page_items, start=(page - 1) * PAGE_SIZE + 1)
+    )
+    return JSONResponse({"html": rows_html, "has_more": page < total_pages})
 
 
 @app.get("/config", response_class=HTMLResponse)
@@ -565,7 +704,14 @@ async def refresh() -> RedirectResponse:
 
 
 @app.post("/ignore")
-async def ignore(name: str = Form(...)) -> RedirectResponse:
+async def ignore(
+    request: Request,
+    name: str = Form(...),
+    rank: int = Form(0),
+    page: int = Form(1),
+    min_score: float = Form(0.0),
+    sort: str = Form("score"),
+) -> Response:
     ignore_list = IgnoreList(_store_path())
     store = CandidateStore(_store_path())
     try:
@@ -574,11 +720,20 @@ async def ignore(name: str = Form(...)) -> RedirectResponse:
     finally:
         ignore_list.close()
         store.close()
-    return RedirectResponse(f"/?{urlencode({'message': f'Ignored {name}. It will be excluded from future runs.'})}", status_code=303)
+    return _row_result(
+        request, name, rank, page, min_score, sort, message=f"Ignored {name}. It will be excluded from future runs."
+    )
 
 
 @app.post("/unignore")
-async def unignore(name: str = Form(...)) -> RedirectResponse:
+async def unignore(
+    request: Request,
+    name: str = Form(...),
+    rank: int = Form(0),
+    page: int = Form(1),
+    min_score: float = Form(0.0),
+    sort: str = Form("score"),
+) -> Response:
     ignore_list = IgnoreList(_store_path())
     store = CandidateStore(_store_path())
     try:
@@ -587,7 +742,7 @@ async def unignore(name: str = Form(...)) -> RedirectResponse:
     finally:
         ignore_list.close()
         store.close()
-    return RedirectResponse(f"/?{urlencode({'message': f'Unignored {name}.'})}", status_code=303)
+    return _row_result(request, name, rank, page, min_score, sort, message=f"Unignored {name}.")
 
 
 @app.post("/ignore-genre")
@@ -624,7 +779,14 @@ async def unignore_genre(genre: str = Form(...)) -> RedirectResponse:
 
 
 @app.post("/add")
-async def add(name: str = Form(...)) -> RedirectResponse:
+async def add(
+    request: Request,
+    name: str = Form(...),
+    rank: int = Form(0),
+    page: int = Form(1),
+    min_score: float = Form(0.0),
+    sort: str = Form("score"),
+) -> Response:
     config = Config.from_env()
     if not (
         config.lidarr_url
@@ -633,17 +795,23 @@ async def add(name: str = Form(...)) -> RedirectResponse:
         and config.lidarr_quality_profile_id
         and config.lidarr_metadata_profile_id
     ):
-        return RedirectResponse(
-            f"/?{urlencode({'error': 'Lidarr is not fully configured (URL/API key/root folder/quality profile/metadata profile).'})}",
-            status_code=303,
+        return _row_result(
+            request,
+            name,
+            rank,
+            page,
+            min_score,
+            sort,
+            error="Lidarr is not fully configured (URL/API key/root folder/quality profile/metadata profile).",
         )
 
     lidarr = LidarrClient(config.lidarr_url, config.lidarr_api_key)
     try:
         lookup = await lidarr.lookup_artist(name)
         if lookup is None:
-            not_found_message = f"{name} was not found in Lidarr's catalog search."
-            return RedirectResponse(f"/?{urlencode({'error': not_found_message})}", status_code=303)
+            return _row_result(
+                request, name, rank, page, min_score, sort, error=f"{name} was not found in Lidarr's catalog search."
+            )
         await lidarr.add_artist(
             Candidate(name=name, similarity=0.0),
             config.lidarr_root_folder,
@@ -651,7 +819,7 @@ async def add(name: str = Form(...)) -> RedirectResponse:
             config.lidarr_metadata_profile_id,
         )
     except Exception as error:  # noqa: BLE001 - surfaced to the UI, not swallowed
-        return RedirectResponse(f"/?{urlencode({'error': f'Failed to add {name}: {_describe(error)}'})}", status_code=303)
+        return _row_result(request, name, rank, page, min_score, sort, error=f"Failed to add {name}: {_describe(error)}")
     finally:
         await lidarr.aclose()
 
@@ -660,7 +828,7 @@ async def add(name: str = Form(...)) -> RedirectResponse:
         store.mark_in_library(name)
     finally:
         store.close()
-    return RedirectResponse(f"/?{urlencode({'message': f'Added {name} to Lidarr.'})}", status_code=303)
+    return _row_result(request, name, rank, page, min_score, sort, message=f"Added {name} to Lidarr.")
 
 
 async def _run_discovery(config: Config) -> None:
@@ -808,12 +976,14 @@ def render_page(
     page_items = candidates[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
 
     rows = "".join(
-        _render_row(rank, c, lidarr_add_enabled)
+        _render_row(rank, c, lidarr_add_enabled, page, min_score, sort)
         for rank, c in enumerate(page_items, start=(page - 1) * PAGE_SIZE + 1)
     )
     updated_line = f"Last updated: {_format_updated(last_updated)}" if last_updated else "No discovery run yet."
+    has_more = page < total_pages
     body = "<p>No candidates to show.</p>" if not candidates else f"""
-    <div class="table-wrap">
+    <div class="table-wrap" id="table-wrap" data-page="{page}" data-min-score="{html.escape(str(min_score), quote=True)}"
+         data-sort="{html.escape(sort, quote=True)}" data-has-more="{'true' if has_more else 'false'}" data-total="{total}">
     <table>
       <thead>
         <tr>
@@ -821,10 +991,11 @@ def render_page(
           <th>Deezer Fans</th><th>LB Listeners</th><th>Last Release</th><th>Status</th><th>Genres</th><th class="actions-col">Actions</th>
         </tr>
       </thead>
-      <tbody>{rows}</tbody>
+      <tbody id="candidate-rows">{rows}</tbody>
     </table>
     </div>
-    {_render_pagination(page, total_pages, min_score, sort)}
+    <div id="scroll-sentinel"></div>
+    <p id="scroll-status" class="scroll-status">{f'Loaded {len(page_items)} of {total} artists.' if has_more else ''}</p>
     """
     if status.running:
         progress = f" ({status.enriched}/{status.total} enriched)" if status.total else ""
@@ -864,6 +1035,7 @@ def render_page(
   {error_banner}
   {action_error}
   {action_message}
+  <div id="action-banner"></div>
   {lidarr_note}
   <div class="toolbar">
     {toolbar}
@@ -873,6 +1045,7 @@ def render_page(
     </form>
   </div>
   {body}
+  <script>{_INDEX_SCRIPT}</script>
 </body>
 </html>"""
 
@@ -1152,22 +1325,6 @@ def _render_genre_ignore_list(ignored_genres: list[str]) -> str:
     """
 
 
-def _render_pagination(page: int, total_pages: int, min_score: float, sort: str) -> str:
-    if total_pages <= 1:
-        return ""
-    prev_qs = urlencode({"min_score": min_score, "sort": sort, "page": page - 1})
-    next_qs = urlencode({"min_score": min_score, "sort": sort, "page": page + 1})
-    prev_class = "disabled" if page <= 1 else ""
-    next_class = "disabled" if page >= total_pages else ""
-    return (
-        '<div class="pagination">'
-        f'<a class="{prev_class}" href="/?{prev_qs}">&larr; Prev</a>'
-        f"<span>Page {page} of {total_pages}</span>"
-        f'<a class="{next_class}" href="/?{next_qs}">Next &rarr;</a>'
-        "</div>"
-    )
-
-
 def _render_sort_selector(sort: str, min_score: float) -> str:
     options = "".join(
         f'<option value="{key}"{" selected" if key == sort else ""}>{html.escape(label)}</option>'
@@ -1182,13 +1339,21 @@ def _render_sort_selector(sort: str, min_score: float) -> str:
     """
 
 
-def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> str:
+def _render_row(
+    rank: int, candidate: Candidate, lidarr_add_enabled: bool, page: int = 1, min_score: float = 0.0, sort: str = "score"
+) -> str:
     all_genres = candidate.discogs_genres + ([candidate.deezer_genre] if candidate.deezer_genre else [])
     genres_cell = " ".join(_render_genre_tag(g) for g in all_genres) or "-"
     last_release = html.escape(candidate.discogs_latest_release_year) if candidate.discogs_latest_release_year else "-"
     popularity = f"{candidate.popularity:,}" if candidate.popularity is not None else "-"
     lb_listeners = f"{candidate.listenbrainz_listeners:,}" if candidate.listenbrainz_listeners is not None else "-"
     name_attr = html.escape(candidate.name, quote=True)
+    context_fields = (
+        f'<input type="hidden" name="rank" value="{rank}">'
+        f'<input type="hidden" name="page" value="{page}">'
+        f'<input type="hidden" name="min_score" value="{html.escape(str(min_score), quote=True)}">'
+        f'<input type="hidden" name="sort" value="{html.escape(sort, quote=True)}">'
+    )
 
     badges = []
     if candidate.already_in_library:
@@ -1210,20 +1375,23 @@ def _render_row(rank: int, candidate: Candidate, lidarr_add_enabled: bool) -> st
         actions = ""
     elif candidate.ignored:
         actions = (
-            f'<form method="post" action="/unignore"><input type="hidden" name="name" value="{name_attr}">'
+            f'<form class="row-action" method="post" action="/unignore">'
+            f'<input type="hidden" name="name" value="{name_attr}">{context_fields}'
             f'<button type="submit">Unignore</button></form>'
         )
     elif candidate.already_in_library:
         actions = ""
     else:
         add_button = (
-            f'<form method="post" action="/add"><input type="hidden" name="name" value="{name_attr}">'
+            f'<form class="row-action" method="post" action="/add">'
+            f'<input type="hidden" name="name" value="{name_attr}">{context_fields}'
             f'<button type="submit">Add to Lidarr</button></form>'
             if lidarr_add_enabled
             else ""
         )
         ignore_button = (
-            f'<form method="post" action="/ignore"><input type="hidden" name="name" value="{name_attr}">'
+            f'<form class="row-action" method="post" action="/ignore">'
+            f'<input type="hidden" name="name" value="{name_attr}">{context_fields}'
             f'<button type="submit">Ignore</button></form>'
         )
         actions = add_button + ignore_button

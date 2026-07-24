@@ -322,11 +322,29 @@ def test_index_paginates_results(tmp_path, monkeypatch):
     assert "Artist 0" in page1.text
     assert "Artist 49" in page1.text
     assert "Artist 50" not in page1.text
-    assert "Page 1 of 2" in page1.text
+    assert 'data-has-more="true"' in page1.text
 
     assert "Artist 50" in page2.text
     assert "Artist 0" not in page2.text
-    assert "Page 2 of 2" in page2.text
+    assert 'data-has-more="false"' in page2.text
+
+
+def test_rows_endpoint_returns_next_page_fragment(tmp_path, monkeypatch):
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    store = CandidateStore(store_path)
+    store.replace_all(
+        [Candidate(name=f"Artist {i}", similarity=1.0 - i / 1000, sources=["lastfm"]) for i in range(60)]
+    )
+    store.close()
+
+    client = TestClient(app)
+    response = client.get("/rows?page=2")
+    data = response.json()
+
+    assert data["has_more"] is False
+    assert "Artist 50" in data["html"]
+    assert "Artist 0" not in data["html"]
 
 
 def test_index_hides_no_pagination_controls_for_single_page(tmp_path, monkeypatch):
@@ -339,7 +357,7 @@ def test_index_hides_no_pagination_controls_for_single_page(tmp_path, monkeypatc
     client = TestClient(app)
     response = client.get("/")
 
-    assert 'class="pagination"' not in response.text
+    assert 'data-has-more="false"' in response.text
 
 
 def test_index_shows_ignored_artists_with_notice_pushed_to_bottom(tmp_path, monkeypatch):
@@ -510,6 +528,54 @@ def test_add_endpoint_marks_candidate_in_library_on_success(tmp_path, monkeypatc
     candidate = next(c for c in store.load_all() if c.name == "New Band")
     assert candidate.already_in_library is True
     store.close()
+
+
+def test_add_endpoint_via_fetch_returns_json_and_preserves_page_context(tmp_path, monkeypatch):
+    """The page's JS submits row actions with X-Requested-With so a click on "Add to Lidarr"
+    doesn't navigate away and reset infinite scroll back to page 1 - it just gets back JSON
+    with the refreshed row to splice into the DOM in place."""
+    store_path = tmp_path / "store.sqlite3"
+    monkeypatch.setenv("STORE_PATH", str(store_path))
+    monkeypatch.setenv("LASTFM_API_KEY", "key")
+    monkeypatch.setenv("LASTFM_USERNAME", "user")
+    monkeypatch.setenv("LIDARR_URL", "http://lidarr.local")
+    monkeypatch.setenv("LIDARR_API_KEY", "lidarr-key")
+    monkeypatch.setenv("LIDARR_ROOT_FOLDER", "/music")
+    monkeypatch.setenv("LIDARR_QUALITY_PROFILE_ID", "1")
+    monkeypatch.setenv("LIDARR_METADATA_PROFILE_ID", "1")
+
+    store = CandidateStore(store_path)
+    store.replace_all([Candidate(name="New Band", similarity=0.9, sources=["lastfm"])])
+    store.close()
+
+    class FakeLidarrClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def lookup_artist(self, name):
+            return {"artistName": name, "foreignArtistId": "abc"}
+
+        async def add_artist(self, candidate, root_folder, quality_profile_id, metadata_profile_id):
+            return None
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(web, "LidarrClient", FakeLidarrClient)
+
+    client = TestClient(app)
+    response = client.post(
+        "/add",
+        data={"name": "New Band", "page": "3", "min_score": "0.1", "sort": "score"},
+        headers={"X-Requested-With": "fetch"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["message"] == "Added New Band to Lidarr."
+    assert "already in library" in data["row_html"]
+    assert "Add to Lidarr" not in data["row_html"]
 
 
 def test_index_shows_ignored_genres_section(tmp_path, monkeypatch):
