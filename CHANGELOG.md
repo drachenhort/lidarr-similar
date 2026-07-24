@@ -4,6 +4,12 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+## v0.4.0 - 2026-07-24
+
+### Changed
+- The results page now uses infinite scroll instead of Prev/Next pagination: further pages of candidates load automatically as you scroll, via a new `GET /rows` fragment endpoint.
+- "Add to Lidarr", "Ignore", and "Unignore" now submit via `fetch()` instead of a normal form POST, so a click no longer redirects back to page 1 - the button's row is swapped in place with its updated state. Clients without JS still get the previous redirect-to-index fallback, now fixed to preserve `page`/`min_score`/`sort` instead of always landing on page 1.
+
 ## v0.3.1 - 2026-07-22
 
 ### Changed
