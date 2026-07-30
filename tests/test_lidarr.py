@@ -104,6 +104,7 @@ async def test_add_artist_includes_metadata_profile_id_in_payload():
     body = json.loads(add_route.calls.last.request.content)
     assert body["qualityProfileId"] == 3
     assert body["metadataProfileId"] == 1
+    assert body["addOptions"]["searchForMissingAlbums"] is True
 
 
 def test_default_http_client_uses_a_generous_timeout():
