@@ -4,6 +4,11 @@ All notable changes to this project are documented here, in reverse chronologica
 
 ## Unreleased
 
+## v0.4.1 - 2026-07-30
+
+### Changed
+- Added a test asserting that `add_artist`'s payload to Lidarr includes `addOptions.searchForMissingAlbums: true`, confirming Lidarr is asked to search for missing albums right after an artist is added.
+
 ## v0.4.0 - 2026-07-24
 
 ### Changed
